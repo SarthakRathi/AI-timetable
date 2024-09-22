@@ -523,4 +523,85 @@ class TimetableController {
         int remaining = calculateRemainingLectures(classGroup)
         render([remaining: remaining] as JSON)
     }
+
+    def getTimetableForEntity() {
+        def type = params.type
+        def value = params.value
+        def timetable = [:]
+
+        // Logic to fetch the timetable based on the type and value
+        switch(type) {
+            case 'option1': // Class
+                timetable = session.timetable[value] ?: [:]
+                break
+            case 'option2': // Teacher
+                timetable = fetchTimetableForTeacher(value)
+                break
+            case 'option3': // Lab
+                timetable = fetchTimetableForLab(value)
+                break
+            case 'option4': // Room
+                timetable = fetchTimetableForRoom(value)
+                break
+            default:
+                render([success: false, message: "Invalid entity type"] as JSON)
+                return
+        }
+
+        render([success: true, timetable: timetable] as JSON)
+    }
+
+    private Map fetchTimetableForTeacher(String teacher) {
+        def timetable = [:]
+        session.timetable.each { className, classTimetable ->
+            classTimetable.each { day, daySlots ->
+                daySlots.each { time, sessions ->
+                    sessions.each { session ->
+                        if (session.teacher == teacher) {
+                            timetable[day] = timetable[day] ?: [:]
+                            timetable[day][time] = timetable[day][time] ?: []
+                            timetable[day][time] << session + [class: className]
+                        }
+                    }
+                }
+            }
+        }
+        return timetable
+    }
+
+    private Map fetchTimetableForLab(String lab) {
+        def timetable = [:]
+        session.timetable.each { className, classTimetable ->
+            classTimetable.each { day, daySlots ->
+                daySlots.each { time, sessions ->
+                    sessions.each { session ->
+                        if (session.room == lab) {
+                            timetable[day] = timetable[day] ?: [:]
+                            timetable[day][time] = timetable[day][time] ?: []
+                            timetable[day][time] << session + [class: className]
+                        }
+                    }
+                }
+            }
+        }
+        return timetable
+    }
+
+    private Map fetchTimetableForRoom(String room) {
+        def timetable = [:]
+        session.timetable.each { className, classTimetable ->
+            classTimetable.each { day, daySlots ->
+                daySlots.each { time, sessions ->
+                    sessions.each { session ->
+                        if (session.room == room) {
+                            timetable[day] = timetable[day] ?: [:]
+                            timetable[day][time] = timetable[day][time] ?: []
+                            timetable[day][time] << session + [class: className]
+                        }
+                    }
+                }
+            }
+        }
+        return timetable
+    }
 }    

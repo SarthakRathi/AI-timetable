@@ -238,6 +238,7 @@
 
         <!-- Step 3: Timetable Summary -->
         <div id="step3" class="step-content">
+            <h3>Manage Timetables</h3>
             <div class="row mb-4">
                 <!-- First Dropdown -->
                 <div class="col-md-4">
@@ -258,8 +259,25 @@
 
                 <!-- Button -->
                 <div class="col-md-4">
-                    <button id="summaryButton" class="btn btn-primary w-100">Generate</button>
+                    <button id="displayButton" class="btn btn-primary w-100">Display</button>
                 </div>
+            </div>
+
+            <!-- Timetable display for Step 3 -->
+            <div id="step3TimetableContainer" style="display: none;">
+                <h4 id="step3TimetableTitle"></h4>
+                <table id="step3Timetable" class="table table-bordered table-hover table-striped shadow-sm p-3 mb-3 bg-white rounded">
+                    <thead>
+                        <tr>
+                            <th>Day / Time</th>
+                            <g:each in="${timeSlots}" var="timeSlot">
+                                <th>${timeSlot}</th>
+                            </g:each>
+                        </tr>
+                    </thead>
+                    <tbody>
+                    </tbody>
+                </table>
             </div>
         </div>
 
@@ -277,7 +295,9 @@
             classes: ${raw((classes as JSON).toString())},
             teachers: ${raw((teachers as JSON).toString())},
             labs: ${raw((labs as JSON).toString())},
-            rooms: ${raw((rooms as JSON).toString())}
+            rooms: ${raw((rooms as JSON).toString())},
+            weekDays: ${raw((weekDays as JSON).toString())},
+            timeSlots: ${raw((timeSlots as JSON).toString())}
         };
 
         function deleteSubject(key) {
@@ -348,6 +368,85 @@
                 }
             });
 
+            $('#displayButton').click(function() {
+                var selectedType = $('#dropdown1').val();
+                var selectedValue = $('#dropdown2').val();
+
+                if (!selectedValue) {
+                    alert('Please select an option from the second dropdown.');
+                    return;
+                }
+                $.ajax({
+                    url: '${createLink(controller: 'timetable', action: 'getTimetableForEntity')}',
+                    method: 'GET',
+                    data: { 
+                        type: selectedType,
+                        value: selectedValue
+                    },
+                    success: function(response) {
+                        if (response.success) {
+                            updateStep3TimetableView(response.timetable, selectedType, selectedValue);
+                        } else {
+                            alert('Error fetching timetable: ' + (response.message || 'Unknown error'));
+                        }
+                    },
+                    error: function(jqXHR, textStatus, errorThrown) {
+                        console.error("AJAX error:", jqXHR, textStatus, errorThrown);
+                        alert('Failed to fetch timetable. Server responded with status: ' + jqXHR.status + '\nError: ' + errorThrown);
+                    }
+                });
+            });
+            
+            function updateStep3TimetableView(timetable, selectedType, selectedValue) {
+                $('#step3TimetableTitle').text('Timetable for ' + getEntityTypeLabel(selectedType) + ': ' + selectedValue);
+                
+                var tbody = $('#step3Timetable tbody');
+                tbody.empty();
+
+                data.weekDays.forEach(function(day) {
+                    var row = $('<tr>').append($('<th>').text(day));
+                    data.timeSlots.forEach(function(time) {
+                        var cell = $('<td>').addClass('timetable-cell');
+                        var sessions = timetable[day] && timetable[day][time] ? timetable[day][time] : [];
+                        
+                        if (sessions.length > 0) {
+                            sessions.forEach(function(session) {
+                                var content = '';
+                                content += 'Class: ' + (session.class || 'N/A') + '<br>';
+                                if (session.type !== 'Lecture') {
+                                    content += 'Batch: ' + (session.batch || 'N/A') + '<br>';
+                                }
+                                content += 'Subject: ' + (session.subject || 'N/A') + '<br>' +
+                                        'Teacher: ' + (session.teacher || 'N/A') + '<br>' +
+                                        'Room: ' + (session.room || 'TBD') + '<br>' +
+                                        'Type: ' + (session.type || 'N/A') + '<br>';
+                                if (session.type === 'Lab') {
+                                    content += '(2 hours)<br>';
+                                }
+                                content += '<br>';
+                                cell.append(content);
+                            });
+                        } else {
+                            cell.text('-');
+                        }
+                        row.append(cell);
+                    });
+                    tbody.append(row);
+                });
+
+                $('#step3TimetableContainer').show();
+            }
+
+            function getEntityTypeLabel(selectedType) {
+                switch(selectedType) {
+                    case 'option1': return 'Class';
+                    case 'option2': return 'Teacher';
+                    case 'option3': return 'Lab';
+                    case 'option4': return 'Room';
+                    default: return 'Entity';
+                }
+            }
+
             function initializeDropdown2() {
                 $('#dropdown2').empty();
                 $.each(data.classes, function(index, value) {
@@ -380,14 +479,6 @@
                 $.each(options, function(index, value) {
                     $('#dropdown2').append('<option value="' + value + '">' + value + '</option>');
                 });
-            });
-
-            // Functionality to the "Generate Summary" button
-            $('#summaryButton').click(function() {
-                var selectedOption1 = $('#dropdown1').val();
-                var selectedOption2 = $('#dropdown2').val();
-                alert('Summary generated for: ' + selectedOption1 + ' and ' + selectedOption2);
-                // You can add additional logic here to process or display the summary
             });
 
             // Class filter change handler
