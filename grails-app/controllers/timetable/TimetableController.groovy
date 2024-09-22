@@ -55,13 +55,15 @@ class TimetableController {
             subjectDetails: session.subjectDetails ?: [:],
             timetable: filteredTimetable,
             subjects: SUBJECTS,
-            classes: CLASSES,
-            teachers: TEACHERS,
+            classes: CLASSES.collect { it.encodeAsJSON() },
+            teachers: TEACHERS.collect { it.encodeAsJSON() },
             weekDays: WEEK_DAYS,
             timeSlots: TIME_SLOTS,
             selectedClass: selectedClass,
             lectureCards: session.lectureCards?[selectedClass] ?: [],
-            currentStep: currentStep
+            currentStep: currentStep,
+            labs: LABROOMS.collect { it.encodeAsJSON() },
+            rooms: ROOMS.collect { it.encodeAsJSON() }
         ]
     }
 

@@ -1,4 +1,7 @@
 <!-- File: grails-app/views/timetable/index.gsp -->
+
+<%@ page import="grails.converters.JSON" %>
+
 <!DOCTYPE html>
 <html>
 <head>
@@ -46,6 +49,7 @@
         <div class="d-flex justify-content-between mb-4">
             <div class="stepper-item active" data-step="1">Step 1: Subject Mapping</div>
             <div class="stepper-item" data-step="2">Step 2: Timetable Generation</div>
+            <div class="stepper-item" data-step="3">Step 3: Timetable Summary</div>
         </div>
 
         <!-- Step 1: Subject Mapping -->
@@ -232,15 +236,49 @@
             </div>
         </div>
 
+        <!-- Step 3: Timetable Summary -->
+        <div id="step3" class="step-content">
+            <div class="row mb-4">
+                <!-- First Dropdown -->
+                <div class="col-md-4">
+                    <select id="dropdown1" class="form-control">
+                        <option value="option1">Class</option>
+                        <option value="option2">Teacher</option>
+                        <option value="option3">Lab</option>
+                        <option value="option4">Room</option>
+                    </select>
+                </div>
+
+                <!-- Second Dropdown -->
+                <div class="col-md-4">
+                    <select id="dropdown2" class="form-control">
+                        <option value="">Please select an option</option>
+                    </select>
+                </div>
+
+                <!-- Button -->
+                <div class="col-md-4">
+                    <button id="summaryButton" class="btn btn-primary w-100">Generate</button>
+                </div>
+            </div>
+        </div>
+
         <!-- Navigation Buttons -->
         <div class="d-flex justify-content-between mt-4">
-            <button id="prevBtn" class="btn btn-secondary" style="display: none;">Previous</button>
+            <button id="prevBtn" class="btn btn-secondary">Previous</button>
             <button id="nextBtn" class="btn btn-primary">Next</button>
         </div>
     </div>
 
     <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
     <script>
+
+        var data = {
+            classes: ${raw((classes as JSON).toString())},
+            teachers: ${raw((teachers as JSON).toString())},
+            labs: ${raw((labs as JSON).toString())},
+            rooms: ${raw((rooms as JSON).toString())}
+        };
 
         function deleteSubject(key) {
             $.ajax({
@@ -261,8 +299,8 @@
         }
 
         $(document).ready(function() {
-            let currentStep = ${params.currentStep ? params.currentStep : 1};
-            const totalSteps = 2;
+            let currentStep = ${params.currentStep ? params.int('currentStep') : 1};
+            const totalSteps = 3;
 
             function updateStepperDisplay() {
                 $('.stepper-item').removeClass('active');
@@ -291,7 +329,7 @@
 
             // Stepper functionality
             $('.stepper-item').click(function() {
-                currentStep = $(this).data('step');
+                currentStep = parseInt($(this).data('step'));
                 updateStepperDisplay();
             });
 
@@ -308,6 +346,48 @@
                     currentStep--;
                     updateStepperDisplay();
                 }
+            });
+
+            function initializeDropdown2() {
+                $('#dropdown2').empty();
+                $.each(data.classes, function(index, value) {
+                    $('#dropdown2').append('<option value="' + value + '">' + value + '</option>');
+                });
+            }
+
+            initializeDropdown2();
+
+            $('#dropdown1').change(function() {
+                var selectedOption = $(this).val();
+                var options = [];
+
+                switch(selectedOption) {
+                    case 'option1':
+                        options = data.classes;
+                        break;
+                    case 'option2':
+                        options = data.teachers;
+                        break;
+                    case 'option3':
+                        options = data.labs;
+                        break;
+                    case 'option4':
+                        options = data.rooms;
+                        break;
+                }
+
+                $('#dropdown2').empty();
+                $.each(options, function(index, value) {
+                    $('#dropdown2').append('<option value="' + value + '">' + value + '</option>');
+                });
+            });
+
+            // Functionality to the "Generate Summary" button
+            $('#summaryButton').click(function() {
+                var selectedOption1 = $('#dropdown1').val();
+                var selectedOption2 = $('#dropdown2').val();
+                alert('Summary generated for: ' + selectedOption1 + ' and ' + selectedOption2);
+                // You can add additional logic here to process or display the summary
             });
 
             // Class filter change handler
@@ -339,103 +419,103 @@
                 }
             });
 
-        function assignLecture(lectureId, day, time) {
-            console.log("Assigning lecture:", lectureId, day, time);
+            function assignLecture(lectureId, day, time) {
+                console.log("Assigning lecture:", lectureId, day, time);
 
-            if (!lectureId || !day || !time) {
-                alert("Error: Missing lecture information. Please try again.");
-                return;
-            }
+                if (!lectureId || !day || !time) {
+                    alert("Error: Missing lecture information. Please try again.");
+                    return;
+                }
 
-            var selectedClass = '${selectedClass}';
-            if (!selectedClass) {
-                alert("Error: No class selected. Please select a class and try again.");
-                return;
-            }
+                var selectedClass = '${selectedClass}';
+                if (!selectedClass) {
+                    alert("Error: No class selected. Please select a class and try again.");
+                    return;
+                }
 
-            $.ajax({
-                url: '${createLink(controller: 'timetable', action: 'assignLecture')}',
-                method: 'POST',
-                contentType: 'application/json',
-                data: JSON.stringify({
-                    selectedClass: selectedClass,
-                    lectureId: lectureId,
-                    day: day,
-                    time: time
-                }),
-                success: function(response) {
-                    if (response.success) {
-                        updateTimetableCell(day, time, response.lecture);
-                        if (response.lecture.type === 'Lab' && response.nextSlot) {
-                            updateTimetableCell(day, response.nextSlot, response.lecture);
+                $.ajax({
+                    url: '${createLink(controller: 'timetable', action: 'assignLecture')}',
+                    method: 'POST',
+                    contentType: 'application/json',
+                    data: JSON.stringify({
+                        selectedClass: selectedClass,
+                        lectureId: lectureId,
+                        day: day,
+                        time: time
+                    }),
+                    success: function(response) {
+                        if (response.success) {
+                            updateTimetableCell(day, time, response.lecture);
+                            if (response.lecture.type === 'Lab' && response.nextSlot) {
+                                updateTimetableCell(day, response.nextSlot, response.lecture);
+                            }
+                            updateLectureCardCount(lectureId);
+                        } else {
+                            alert('Error assigning lecture: ' + response.message);
                         }
-                        updateLectureCardCount(lectureId);
-                    } else {
-                        alert('Error assigning lecture: ' + response.message);
+                    },
+                    error: function(jqXHR, textStatus, errorThrown) {
+                        console.error("AJAX error:", jqXHR, textStatus, errorThrown);
+                        var errorMessage = 'Error assigning lecture: ' + errorThrown + 
+                                        '\nStatus: ' + jqXHR.status + 
+                                        '\nResponse: ' + jqXHR.responseText;
+                        console.error(errorMessage);
+                        alert(errorMessage);
                     }
-                },
-                error: function(jqXHR, textStatus, errorThrown) {
-                    console.error("AJAX error:", jqXHR, textStatus, errorThrown);
-                    var errorMessage = 'Error assigning lecture: ' + errorThrown + 
-                                    '\nStatus: ' + jqXHR.status + 
-                                    '\nResponse: ' + jqXHR.responseText;
-                    console.error(errorMessage);
-                    alert(errorMessage);
-                }
-            });
-        }
-
-        $('#generateTimetableBtn').click(function(e) {
-            e.preventDefault();
-            $.ajax({
-                url: '${createLink(controller: 'timetable', action: 'generateTimetable')}',
-                method: 'POST',
-                data: { selectedClass: $('#selectedClass').val() },
-                success: function(response) {
-                    if (response.success) {
-                        updateTimetableView(response.timetable);
-                        updateLectureCardsView(response.lectureCards);
-                    } else {
-                        alert('Error generating timetable: ' + (response.message || 'Unknown error'));
-                    }
-                },
-                error: function(jqXHR, textStatus, errorThrown) {
-                    console.error("AJAX error:", jqXHR, textStatus, errorThrown);
-                    alert('Failed to generate timetable. Server responded with status: ' + jqXHR.status + '\nError: ' + errorThrown);
-                }
-            });
-        });
-
-
-        function updateTimetableView(timetable) {
-            $('.timetable-cell').each(function() {
-                const day = $(this).data('day');
-                const time = $(this).data('time');
-                const sessions = timetable[day] && timetable[day][time] ? timetable[day][time] : [];
-
-                let content = sessions.length > 0 ? '' : '-';  // Default content for empty slots
-
-                sessions.forEach((session) => {
-                    content += (session.type !== 'Lecture' ? 'Batch ' + (session.batch || 'N/A') + '<br>' : '') +
-                            'Subject: ' + (session.subject || 'N/A') + '<br>' +
-                            'Teacher: ' + (session.teacher || 'N/A') + '<br>' +
-                            'Room: ' + (session.room || 'TBD') + '<br>' +
-                            'Type: ' + (session.type || 'N/A') + '<br>';
-                    if (session.type === 'Lab') {
-                        content += '(2 hours)<br>';
-                    }
-                    content += '<br>';
                 });
-                $(this).html(content);
-            });
-        }
+            }
 
-        function updateLectureCardsView(lectureCards) {
-            lectureCards.forEach(function(card) {
-                let cardElement = $('.lecture-card[data-id="' + card.id + '"]');
-                cardElement.find('.lecture-count').text(card.count);
+            $('#generateTimetableBtn').click(function(e) {
+                e.preventDefault();
+                $.ajax({
+                    url: '${createLink(controller: 'timetable', action: 'generateTimetable')}',
+                    method: 'POST',
+                    data: { selectedClass: $('#selectedClass').val() },
+                    success: function(response) {
+                        if (response.success) {
+                            updateTimetableView(response.timetable);
+                            updateLectureCardsView(response.lectureCards);
+                        } else {
+                            alert('Error generating timetable: ' + (response.message || 'Unknown error'));
+                        }
+                    },
+                    error: function(jqXHR, textStatus, errorThrown) {
+                        console.error("AJAX error:", jqXHR, textStatus, errorThrown);
+                        alert('Failed to generate timetable. Server responded with status: ' + jqXHR.status + '\nError: ' + errorThrown);
+                    }
+                });
             });
-        }
+
+
+            function updateTimetableView(timetable) {
+                $('.timetable-cell').each(function() {
+                    const day = $(this).data('day');
+                    const time = $(this).data('time');
+                    const sessions = timetable[day] && timetable[day][time] ? timetable[day][time] : [];
+
+                    let content = sessions.length > 0 ? '' : '-';  // Default content for empty slots
+
+                    sessions.forEach((session) => {
+                        content += (session.type !== 'Lecture' ? 'Batch ' + (session.batch || 'N/A') + '<br>' : '') +
+                                'Subject: ' + (session.subject || 'N/A') + '<br>' +
+                                'Teacher: ' + (session.teacher || 'N/A') + '<br>' +
+                                'Room: ' + (session.room || 'TBD') + '<br>' +
+                                'Type: ' + (session.type || 'N/A') + '<br>';
+                        if (session.type === 'Lab') {
+                            content += '(2 hours)<br>';
+                        }
+                        content += '<br>';
+                    });
+                    $(this).html(content);
+                });
+            }
+
+            function updateLectureCardsView(lectureCards) {
+                lectureCards.forEach(function(card) {
+                    let cardElement = $('.lecture-card[data-id="' + card.id + '"]');
+                    cardElement.find('.lecture-count').text(card.count);
+                });
+            }
 
             function updateTimetableCell(day, time, lecture) {
                 let cell = $('.timetable-cell[data-day="' + day + '"][data-time="' + time + '"]');
