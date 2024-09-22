@@ -8,21 +8,21 @@ class UrlMappings {
             }
         }
 
-        // This should point to a general index GSP or be removed if not used
-        "/"(view:"/index")
-
         "500"(view:'/error')
         "404"(view:'/notFound')
 
-        // Mapping to your TimetableController
+        // Timetable-specific mappings
         "/timetable/index"(controller: 'timetable', action: 'index')
         "/timetable/addSubject"(controller: "timetable", action: "addSubject")
-        "/timetable/downloadTimetable"(controller: "timetable", action: "downloadTimetable")
         "/timetable/deleteSubject"(controller: "timetable", action: "deleteSubject")
         "/timetable/getRemainingLectures"(controller: "timetable", action: "getRemainingLectures")
         "/timetable/downloadTemplate"(controller: "timetable", action: "downloadTemplate")
         "/timetable/uploadSubjectMapping"(controller: "timetable", action: "uploadSubjectMapping")
-        "/timetable/setTimetableHours"(controller: "timetable", action: "setTimetableHours")
+        "/timetable/assignLecture"(controller: "timetable", action: "assignLecture")
+        "/timetable/generateTimetable"(controller: "timetable", action: "generateTimetable")
+        "/timetable/resetTimetable"(controller: "timetable", action: "resetTimetable")
+
+        // Set the timetable index as the main page
         "/"(controller: "timetable", action: "index")
     }
 }

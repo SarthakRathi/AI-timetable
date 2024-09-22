@@ -9,8 +9,6 @@ import org.apache.poi.ss.util.CellRangeAddressList
 import org.apache.poi.xssf.usermodel.XSSFDataValidation
 import org.apache.poi.xssf.usermodel.XSSFDataValidationConstraint
 import org.apache.poi.xssf.usermodel.XSSFDataValidationHelper
-import java.time.LocalTime
-import java.time.format.DateTimeFormatter
 
 class TimetableController {
     ExcelService excelService
@@ -60,46 +58,11 @@ class TimetableController {
             classes: CLASSES,
             teachers: TEACHERS,
             weekDays: WEEK_DAYS,
-            timeSlots: session.timeSlots ?: [],
+            timeSlots: TIME_SLOTS,
             selectedClass: selectedClass,
             lectureCards: session.lectureCards?[selectedClass] ?: [],
             currentStep: currentStep
         ]
-    }
-
-    def setTimetableHours() {
-        def startTime = params.startTime
-        def endTime = params.endTime
-
-        if (!startTime || !endTime) {
-            render([success: false, message: "Start time and end time are required"] as JSON)
-            return
-        }
-
-        try {
-            def inputFormatter = DateTimeFormatter.ofPattern("HH:mm")
-            def outputFormatter = DateTimeFormatter.ofPattern("h:mm a")
-            def start = LocalTime.parse(startTime, inputFormatter)
-            def end = LocalTime.parse(endTime, inputFormatter)
-
-            if (start.isAfter(end)) {
-                render([success: false, message: "Start time must be before end time"] as JSON)
-                return
-            }
-
-            def timeSlots = []
-            def current = start
-            while (current.isBefore(end) || current.equals(end)) {
-                timeSlots << current.format(outputFormatter)
-                current = current.plusHours(1)
-            }
-
-            session.timeSlots = timeSlots
-            render([success: true, timeSlots: timeSlots] as JSON)
-        } catch (Exception e) {
-            log.error("Error setting timetable hours: ${e.message}", e)
-            render([success: false, message: "Error setting timetable hours: ${e.message}"] as JSON)
-        }
     }
 
     private void generateLectureCards(String selectedClass) {
@@ -408,16 +371,27 @@ class TimetableController {
     }
 
     private String assignRoom(String selectedClass, String day, String time, String type) {
-        if (type == "Lab") {
-            def availableLabRooms = LABROOMS - session.timetable.values().collect { classTimetable ->
-                classTimetable[day]?[time]?.findAll { it.type == "Lab" }?.collect { it.room }
-            }.flatten().findAll()
-            return availableLabRooms ? availableLabRooms[new Random().nextInt(availableLabRooms.size())] : "TBD"
-        } else {
-            def availableRooms = (ROOMS + LABROOMS) - session.timetable.values().collect { classTimetable ->
-                classTimetable[day]?[time]?.collect { it.room }
-            }.flatten().findAll()
-            return availableRooms ? availableRooms[new Random().nextInt(availableRooms.size())] : "TBD"
+        switch (type) {
+            case "Lecture":
+                def availableRooms = ROOMS - session.timetable.values().collect { classTimetable ->
+                    classTimetable[day]?[time]?.findAll { it.type == "Lecture" }?.collect { it.room }
+                }.flatten().findAll()
+                return availableRooms ? availableRooms[new Random().nextInt(availableRooms.size())] : "TBD"
+            
+            case "Lab":
+                def availableLabRooms = LABROOMS - session.timetable.values().collect { classTimetable ->
+                    classTimetable[day]?[time]?.findAll { it.type == "Lab" }?.collect { it.room }
+                }.flatten().findAll()
+                return availableLabRooms ? availableLabRooms[new Random().nextInt(availableLabRooms.size())] : "TBD"
+            
+            case "Tutorial":
+                def availableRooms = (ROOMS + LABROOMS) - session.timetable.values().collect { classTimetable ->
+                    classTimetable[day]?[time]?.collect { it.room }
+                }.flatten().findAll()
+                return availableRooms ? availableRooms[new Random().nextInt(availableRooms.size())] : "TBD"
+            
+            default:
+                return "TBD"
         }
     }
 

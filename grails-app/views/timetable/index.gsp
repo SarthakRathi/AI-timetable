@@ -50,23 +50,6 @@
 
         <!-- Step 1: Subject Mapping -->
         <div class="step-content active" id="step1">
-            <div class="mb-4">
-                <h3>Set Timetable Hours</h3>
-                <form id="timetableHoursForm" class="row g-3">
-                    <div class="col-auto">
-                        <label for="startTime" class="form-label">Start Time:</label>
-                        <input type="time" id="startTime" name="startTime" class="form-control" required>
-                    </div>
-                    <div class="col-auto">
-                        <label for="endTime" class="form-label">End Time:</label>
-                        <input type="time" id="endTime" name="endTime" class="form-control" required>
-                    </div>
-                    <div class="col-auto">
-                        <button type="submit" class="btn btn-primary mt-4">Set Timetable Hours</button>
-                    </div>
-                </form>
-            </div>
-
             <!-- Form for adding subject details -->
             <form action="${createLink(controller: 'timetable', action: 'addSubject')}" method="POST" class="shadow-sm p-3 bg-white rounded mb-4">
                 <div class="mb-3">
@@ -257,67 +240,6 @@
     </div>
 
     <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
-    <script>
-        $(document).ready(function() {
-            $('#timetableHoursForm').submit(function(e) {
-                e.preventDefault();
-                var startTime = $('#startTime').val();
-                var endTime = $('#endTime').val();
-
-                $.ajax({
-                    url: '${createLink(controller: 'timetable', action: 'setTimetableHours')}',
-                    method: 'POST',
-                    data: {
-                        startTime: startTime,
-                        endTime: endTime
-                    },
-                    dataType: 'json',
-                    success: function(response) {
-                        if (response.success) {
-                            updateTimeSlotsUI(response.timeSlots);
-                            alert('Timetable hours set successfully');
-                        } else {
-                            alert('Failed to set timetable hours: ' + response.message);
-                        }
-                    },
-                    error: function(xhr, status, error) {
-                        console.error("AJAX error:", status, error);
-                        alert('Error setting timetable hours. Please try again.');
-                    }
-                });
-            });
-
-            function updateTimeSlotsUI(timeSlots) {
-                // Update the time slots in the timetable view
-                var headerRow = $('#timetable thead tr');
-                headerRow.find('th:not(:first)').remove();
-                timeSlots.forEach(function(slot) {
-                    headerRow.append('<th>' + slot + '</th>');
-                });
-
-                // Update the time slots in the timetable body
-                $('#timetable tbody tr').each(function() {
-                    var row = $(this);
-                    var day = row.find('th').text();
-                    row.find('td').remove();
-                    timeSlots.forEach(function(slot) {
-                        row.append('<td class="timetable-cell" data-day="' + day + '" data-time="' + slot + '">-</td>');
-                    });
-                });
-
-                // Re-attach click event to new cells
-                $('.timetable-cell').click(function() {
-                    if (selectedLectureCard) {
-                        let day = $(this).data('day');
-                        let time = $(this).data('time');
-                        assignLecture(selectedLectureCard, day, time);
-                    } else {
-                        alert("Please select a lecture card first.");
-                    }
-                });
-            }
-        });
-    </script>
     <script>
 
         function deleteSubject(key) {
