@@ -115,7 +115,7 @@
 
             <!-- Table to display subject details -->
             <h2>Subject Details</h2>
-            <table class="table table-bordered table-hover shadow-sm p-3 mb-3 bg-white rounded">
+            <table class="table table-striped table-bordered table-hover shadow-sm p-3 mb-3 bg-white rounded">
                 <thead>
                     <tr>
                         <th>Subject</th>
@@ -179,7 +179,7 @@
 
             <!-- Timetable display -->
             <h2>Current Timetable for ${selectedClass}</h2>
-            <table id="timetable" class="table table-bordered table-hover table-striped shadow-sm p-3 mb-3 bg-white rounded">
+            <table id="timetable" class="table table-striped table-bordered shadow-sm p-3 mb-3 bg-white rounded">
                 <thead>
                     <tr>
                         <th>Day / Time</th>

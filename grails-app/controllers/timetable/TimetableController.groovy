@@ -21,6 +21,7 @@ class TimetableController {
     private static final List<String> TEACHERS = ['Rohan', 'Ravi', 'Ashwin', 'Karan', 'Priya']
     private static final List<String> WEEK_DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday']
     private static final List<String> TIME_SLOTS = ['8:00', '09:00', '10:00', '11:00', '12:00', '1:00', '2:00', '3:00', '4:00', '5:00']
+    private static final List<String> COLORS = ['#87A2FF', '#C4D7FF', '#FFD7C4', '#FFF4B5', '#E7CCCC', '#CDC1FF', '#CEDF9F', '#F1F3C2', '#FFC6C6', '#95D2B3']
 
     def index() {
         def selectedClass = params.selectedClass ?: CLASSES[0]
@@ -316,14 +317,32 @@ class TimetableController {
                 def nextTime = TIME_SLOTS[nextTimeIndex]
                 def nextSlot = timetable[day]?[nextTime] ?: []
                 // Check if there's space for this batch in both current and next slot
-                return canAddBatchToSlot(currentSlot, newLecture) && canAddBatchToSlot(nextSlot, newLecture)
+                return canAddBatchToSlot(currentSlot, newLecture) && 
+                    canAddBatchToSlot(nextSlot, newLecture) &&
+                    !isTeacherOrRoomOccupied(currentSlot, newLecture) &&
+                    !isTeacherOrRoomOccupied(nextSlot, newLecture)
             }
             return false
         } else if (newLecture.type == "Tutorial") {
-            return canAddBatchToSlot(currentSlot, newLecture)
+            return canAddBatchToSlot(currentSlot, newLecture) &&
+                !isTeacherOrRoomOccupied(currentSlot, newLecture)
         }
 
         return false
+    }
+
+    private boolean isTeacherOrRoomOccupied(List slotSessions, Map newLecture) {
+        return slotSessions.any { session ->
+            session.teacher == newLecture.teacher || session.room == newLecture.room
+        }
+    }
+
+    private boolean isTeacherAvailable(String selectedClass, String day, String time, String teacher) {
+        return !session.timetable.any { classGroup, classTimetable ->
+            classTimetable[day]?[time]?.any { session ->
+                session.teacher == teacher
+            }
+        }
     }
 
     private boolean canAddBatchToSlot(List slotSessions, Map newLecture) {
@@ -364,32 +383,22 @@ class TimetableController {
         return availableSlots ? availableSlots[0] : null
     }
 
-    private boolean isTeacherAvailable(String selectedClass, String day, String time, String teacher) {
-        return !session.timetable.any { classGroup, classTimetable ->
-            classTimetable[day]?[time]?.any { session ->
-                session.teacher == teacher
-            }
-        }
-    }
-
     private String assignRoom(String selectedClass, String day, String time, String type) {
+        def occupiedRooms = session.timetable.values().collect { classTimetable ->
+            classTimetable[day]?[time]?.collect { it.room }
+        }.flatten().findAll()
+
         switch (type) {
             case "Lecture":
-                def availableRooms = ROOMS - session.timetable.values().collect { classTimetable ->
-                    classTimetable[day]?[time]?.findAll { it.type == "Lecture" }?.collect { it.room }
-                }.flatten().findAll()
+                def availableRooms = ROOMS - occupiedRooms
                 return availableRooms ? availableRooms[new Random().nextInt(availableRooms.size())] : "TBD"
             
             case "Lab":
-                def availableLabRooms = LABROOMS - session.timetable.values().collect { classTimetable ->
-                    classTimetable[day]?[time]?.findAll { it.type == "Lab" }?.collect { it.room }
-                }.flatten().findAll()
+                def availableLabRooms = LABROOMS - occupiedRooms
                 return availableLabRooms ? availableLabRooms[new Random().nextInt(availableLabRooms.size())] : "TBD"
             
             case "Tutorial":
-                def availableRooms = (ROOMS + LABROOMS) - session.timetable.values().collect { classTimetable ->
-                    classTimetable[day]?[time]?.collect { it.room }
-                }.flatten().findAll()
+                def availableRooms = (ROOMS + LABROOMS) - occupiedRooms
                 return availableRooms ? availableRooms[new Random().nextInt(availableRooms.size())] : "TBD"
             
             default:
