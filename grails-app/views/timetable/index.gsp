@@ -165,7 +165,7 @@
             <div id="lectureCards" class="row mb-3">
                 <g:each in="${lectureCards}" var="card">
                     <div class="col-md-3 mb-2">
-                        <div class="lecture-card shadow p-3 bg-white rounded" data-id="${card.id}">
+                        <div class="lecture-card shadow p-3 rounded" data-id="${card.id}" style="background-color: ${colorMap[card.subject] ?: '#FFFFFF'};">
                             <h6>${card.subject} (${card.type})</h6>
                             <h6>Teacher: ${card.teacher}</h6>
                             <g:if test="${card.type != 'Lecture'}">
@@ -175,7 +175,7 @@
                         </div>
                     </div>
                 </g:each>
-            </div>                                                                                                                                                                                               
+            </div>                                                                                                                                                                                             
 
             <!-- Timetable display -->
             <h2>Current Timetable for ${selectedClass}</h2>
@@ -297,7 +297,8 @@
             labs: ${raw((labs as JSON).toString())},
             rooms: ${raw((rooms as JSON).toString())},
             weekDays: ${raw((weekDays as JSON).toString())},
-            timeSlots: ${raw((timeSlots as JSON).toString())}
+            timeSlots: ${raw((timeSlots as JSON).toString())},
+            colorMap: ${raw((colorMap as JSON).toString())}  // Add this line
         };
 
         function deleteSubject(key) {
@@ -368,6 +369,9 @@
                 }
             });
 
+            // Initialize lecture cards with colors
+            updateLectureCardsView(${raw((lectureCards as JSON).toString())});
+
             $('#displayButton').click(function() {
                 var selectedType = $('#dropdown1').val();
                 var selectedValue = $('#dropdown2').val();
@@ -385,7 +389,7 @@
                     },
                     success: function(response) {
                         if (response.success) {
-                            updateStep3TimetableView(response.timetable, selectedType, selectedValue);
+                            updateStep3TimetableView(response.timetable, selectedType, selectedValue, response.colorMap);
                         } else {
                             alert('Error fetching timetable: ' + (response.message || 'Unknown error'));
                         }
@@ -397,7 +401,7 @@
                 });
             });
             
-            function updateStep3TimetableView(timetable, selectedType, selectedValue) {
+            function updateStep3TimetableView(timetable, selectedType, selectedValue, colorMap) {
                 $('#step3TimetableTitle').text('Timetable for ' + getEntityTypeLabel(selectedType) + ': ' + selectedValue);
                 
                 var tbody = $('#step3Timetable tbody');
@@ -411,19 +415,23 @@
                         
                         if (sessions.length > 0) {
                             sessions.forEach(function(session) {
-                                var content = '';
-                                content += 'Class: ' + (session.class || 'N/A') + '<br>';
+                                var backgroundColor = colorMap[session.subject] || '#FFFFFF';
+                                var content = $('<div>').css({
+                                    'background-color': backgroundColor,
+                                    'padding': '5px',
+                                    'margin-bottom': '5px'
+                                });
+                                content.append('Class: ' + (session.class || 'N/A') + '<br>');
                                 if (session.type !== 'Lecture') {
-                                    content += 'Batch: ' + (session.batch || 'N/A') + '<br>';
+                                    content.append('Batch: ' + (session.batch || 'N/A') + '<br>');
                                 }
-                                content += 'Subject: ' + (session.subject || 'N/A') + '<br>' +
+                                content.append('Subject: ' + (session.subject || 'N/A') + '<br>' +
                                         'Teacher: ' + (session.teacher || 'N/A') + '<br>' +
                                         'Room: ' + (session.room || 'TBD') + '<br>' +
-                                        'Type: ' + (session.type || 'N/A') + '<br>';
+                                        'Type: ' + (session.type || 'N/A') + '<br>');
                                 if (session.type === 'Lab') {
-                                    content += '(2 hours)<br>';
+                                    content.append('(2 hours)<br>');
                                 }
-                                content += '<br>';
                                 cell.append(content);
                             });
                         } else {
@@ -564,8 +572,9 @@
                     data: { selectedClass: $('#selectedClass').val() },
                     success: function(response) {
                         if (response.success) {
-                            updateTimetableView(response.timetable);
-                            updateLectureCardsView(response.lectureCards);
+                            data.colorMap = response.colorMap; // Update the colorMap in the data object
+                            updateTimetableView(response.timetable, response.colorMap);
+                            updateLectureCardsView(response.lectureCards, response.colorMap);
                         } else {
                             alert('Error generating timetable: ' + (response.message || 'Unknown error'));
                         }
@@ -577,8 +586,7 @@
                 });
             });
 
-
-            function updateTimetableView(timetable) {
+            function updateTimetableView(timetable, colorMap) {
                 $('.timetable-cell').each(function() {
                     const day = $(this).data('day');
                     const time = $(this).data('time');
@@ -587,6 +595,8 @@
                     let content = sessions.length > 0 ? '' : '-';  // Default content for empty slots
 
                     sessions.forEach((session) => {
+                        const backgroundColor = colorMap[session.subject] || '#FFFFFF'; // Default to white if no color found
+                        content += '<div style="background-color: ' + backgroundColor + '; padding: 5px; margin-bottom: 5px;">';
                         content += (session.type !== 'Lecture' ? 'Batch ' + (session.batch || 'N/A') + '<br>' : '') +
                                 'Subject: ' + (session.subject || 'N/A') + '<br>' +
                                 'Teacher: ' + (session.teacher || 'N/A') + '<br>' +
@@ -595,16 +605,31 @@
                         if (session.type === 'Lab') {
                             content += '(2 hours)<br>';
                         }
-                        content += '<br>';
+                        content += '</div>';
                     });
                     $(this).html(content);
                 });
             }
 
-            function updateLectureCardsView(lectureCards) {
+            function updateLectureCardsView(lectureCards, colorMap) {
+                colorMap = colorMap || data.colorMap;  // Use the colorMap from data if not provided
+                $('#lectureCards').empty();
                 lectureCards.forEach(function(card) {
-                    let cardElement = $('.lecture-card[data-id="' + card.id + '"]');
-                    cardElement.find('.lecture-count').text(card.count);
+                    var backgroundColor = colorMap[card.subject] || '#FFFFFF';
+                    var cardHtml = '<div class="col-md-3 mb-2">' +
+                        '<div class="lecture-card shadow p-3 rounded" data-id="' + card.id + '" style="background-color: ' + backgroundColor + ';">' +
+                        '<h6>' + card.subject + ' (' + card.type + ')</h6>' +
+                        '<h6>Teacher: ' + card.teacher + '</h6>';
+                    
+                    if (card.type !== 'Lecture') {
+                        cardHtml += '<h6>Batch: ' + card.batch + '</h6>';
+                    }
+                    
+                    cardHtml += '<h6>Remaining: <span class="lecture-count">' + card.count + '</span></h6>' +
+                        '</div>' +
+                        '</div>';
+                    
+                    $('#lectureCards').append(cardHtml);
                 });
             }
 
@@ -613,7 +638,8 @@
                 let currentContent = cell.html().trim();
 
                 if (lecture) {
-                    let newContent = '';
+                    let backgroundColor = data.colorMap[lecture.subject] || '#FFFFFF';
+                    let newContent = '<div style="background-color: ' + backgroundColor + '; padding: 5px; margin-bottom: 5px;">';
                     if (lecture.type !== 'Lecture') {
                         newContent += 'Batch ' + (lecture.batch || 'N/A') + '<br>';
                     }
@@ -626,7 +652,7 @@
                         newContent += ' (2 hours)';
                     }
                     
-                    newContent += '<br><br>';
+                    newContent += '</div>';
 
                     if (currentContent !== '-') {
                         cell.append(newContent);

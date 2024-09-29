@@ -48,9 +48,14 @@ class TimetableController {
             }
         }
 
+        if (!session.subjectDetails) {
+            session.subjectDetails = [:]
+        }
+
         generateLectureCards(selectedClass)
         def filteredSubjectDetails = filterSubjectDetailsByClass(selectedClass)
         def filteredTimetable = filterTimetableByClass(selectedClass)
+        def colorMap = assignColorsToSubjects()
 
         [
             subjectDetails: session.subjectDetails ?: [:],
@@ -64,8 +69,24 @@ class TimetableController {
             lectureCards: session.lectureCards?[selectedClass] ?: [],
             currentStep: currentStep,
             labs: LABROOMS.collect { it.encodeAsJSON() },
-            rooms: ROOMS.collect { it.encodeAsJSON() }
+            rooms: ROOMS.collect { it.encodeAsJSON() },
+            colorMap: colorMap  
         ]
+    }
+
+    private Map<String, String> assignColorsToSubjects() {
+        if (!session.colorMap) {
+            session.colorMap = [:]
+        }
+        if (session.subjectDetails) {
+            def subjects = session.subjectDetails.values().collect { it.subject }.unique()
+            subjects.each { subject ->
+                if (!session.colorMap.containsKey(subject)) {
+                    session.colorMap[subject] = COLORS[new Random().nextInt(COLORS.size())]
+                }
+            }
+        }
+        return session.colorMap
     }
 
     private void generateLectureCards(String selectedClass) {
@@ -179,12 +200,13 @@ class TimetableController {
 
             if (canAddLectureToSlot(timetable, day, time, lecture)) {
                 def newLecture = [
-                    subject: lecture.subject,
-                    teacher: lecture.teacher,
-                    room: assignRoom(selectedClass, day, time, lecture.type),
-                    type: lecture.type,
-                    batch: lecture.batch
-                ]
+                subject: lecture.subject,
+                teacher: lecture.teacher,
+                room: assignRoom(selectedClass, day, time, lecture.type),
+                type: lecture.type,
+                batch: lecture.batch,
+                color: session.colorMap[lecture.subject] 
+            ]
                 
                 timetable[day][time] << newLecture
 
@@ -228,38 +250,69 @@ class TimetableController {
                 return
             }
 
-            def timetable = session.timetable[selectedClass] ?: [:]
-
-            // Initialize timetable structure if it doesn't exist
+            def timetable = [:]
             WEEK_DAYS.each { day ->
-                timetable[day] = timetable[day] ?: [:]
+                timetable[day] = [:]
                 TIME_SLOTS.each { time ->
-                    timetable[day][time] = timetable[day][time] ?: []
+                    timetable[day][time] = []
                 }
             }
 
-            // Separate lecture cards into different types
-            def lectures = lectureCards.findAll { it.type == "Lecture" }
-            def labs = lectureCards.findAll { it.type == "Lab" }
-            def tutorials = lectureCards.findAll { it.type == "Tutorial" }
+            // Shuffle the lecture cards to randomize placement
+            Collections.shuffle(lectureCards)
 
-            // Assign lectures first
-            assignSessions(lectures, timetable, selectedClass)
+            lectureCards.each { card ->
+                def remainingLectures = card.count
+                while (remainingLectures > 0) {
+                    def slot = findRandomAvailableSlot(timetable, card, selectedClass)
+                    if (slot) {
+                        def lecture = [
+                            subject: card.subject,
+                            teacher: card.teacher,
+                            class: selectedClass,
+                            room: assignRoom(selectedClass, slot.day, slot.time, card.type),
+                            type: card.type,
+                            batch: card.batch
+                        ]
 
-            // Then assign labs
-            assignSessions(labs, timetable, selectedClass)
+                        timetable[slot.day][slot.time] << lecture
+                        if (card.type == "Lab") {
+                            def nextTimeIndex = TIME_SLOTS.indexOf(slot.time) + 1
+                            if (nextTimeIndex < TIME_SLOTS.size()) {
+                                def nextTime = TIME_SLOTS[nextTimeIndex]
+                                timetable[slot.day][nextTime] << lecture
+                            }
+                        }
+                        remainingLectures--
+                        card.count--
+                    } else {
+                        break
+                    }
+                }
+            }
 
-            // Finally assign tutorials
-            assignSessions(tutorials, timetable, selectedClass)
-
+            def colorMap = assignColorsToSubjects()
             session.timetable[selectedClass] = timetable
             session.lectureCards[selectedClass] = lectureCards
 
-            render([success: true, timetable: timetable, lectureCards: lectureCards] as JSON)
+            render([success: true, timetable: timetable, lectureCards: lectureCards, colorMap: colorMap] as JSON)
         } catch (Exception e) {
             log.error("Error generating timetable: ${e.message}", e)
             render([success: false, message: "Error generating timetable: ${e.message}"] as JSON)
         }
+    }
+
+    private Map findRandomAvailableSlot(Map timetable, Map card, String selectedClass) {
+        def availableSlots = []
+        WEEK_DAYS.each { day ->
+            TIME_SLOTS.each { time ->
+                if (canAddLectureToSlot(timetable, day, time, card) && 
+                    isTeacherAvailable(selectedClass, day, time, card.teacher)) {
+                    availableSlots << [day: day, time: time]
+                }
+            }
+        }
+        return availableSlots ? availableSlots[new Random().nextInt(availableSlots.size())] : null
     }
 
     private void assignSessions(List cards, Map timetable, String selectedClass) {
@@ -489,13 +542,21 @@ class TimetableController {
 
                 if (subject && type && teacher && classGroup && lecturesPerWeek) {
                     def key = "${subject}_${classGroup}_${type}"
-                    session.subjectDetails[key] = [
+                    
+                    def entry = [
                         subject: subject,
                         teacher: teacher,
                         class: classGroup,
                         lecturesPerWeek: lecturesPerWeek,
                         type: type
                     ]
+
+                    if (type == "Lab" || type == "Tutorial") {
+                        // For Labs and Tutorials, add batch information
+                        entry.batchCount = 3  // Assuming 3 batches for Labs and Tutorials
+                    }
+
+                    session.subjectDetails[key] = entry
                 }
             }
 
@@ -557,7 +618,7 @@ class TimetableController {
                 return
         }
 
-        render([success: true, timetable: timetable] as JSON)
+        render([success: true, timetable: timetable, colorMap: session.colorMap] as JSON)
     }
 
     private Map fetchTimetableForTeacher(String teacher) {
