@@ -667,7 +667,6 @@ class TimetableController {
                             timetable[day] = timetable[day] ?: [:]
                             timetable[day][time] = timetable[day][time] ?: []
                             timetable[day][time] << session + [class: className]
-                            sgsgdgdg
                         }
                     }
                 }
