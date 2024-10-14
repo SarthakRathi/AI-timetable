@@ -5,6 +5,9 @@ import grails.converters.JSON
 import org.apache.poi.xssf.usermodel.XSSFSheet
 import org.apache.poi.xssf.usermodel.XSSFRow
 import org.apache.poi.xssf.usermodel.XSSFWorkbook
+import org.apache.poi.ss.usermodel.CellType
+import org.apache.poi.ss.usermodel.DateUtil
+import org.apache.poi.xssf.usermodel.XSSFCell
 import org.apache.poi.ss.util.CellRangeAddressList
 import org.apache.poi.xssf.usermodel.XSSFDataValidation
 import org.apache.poi.xssf.usermodel.XSSFDataValidationConstraint
@@ -108,7 +111,7 @@ class TimetableController {
             int assignedLectures = 0
             existingTimetable.each { day, slots ->
                 slots.each { time, slotList ->
-                    assignedLectures += slotList.count { it.subject == details.subject }
+                    assignedLectures += slotList.count { it.subject == details.subject && it.batch == details.batch }
                 }
             }
             def remainingLectures = details.lecturesPerWeek - assignedLectures
@@ -124,12 +127,13 @@ class TimetableController {
                     ]
                 } else {
                     // For Labs and Tutorials, create separate cards for each batch
-                    (1..3).each { batchNumber ->
+                    def batches = details.batch ? [details.batch] : ['1', '2', '3']
+                    batches.each { batchNumber ->
                         session.lectureCards[selectedClass] << [
                             id: "${details.subject}_${details.class}_${details.type}_Batch${batchNumber}".toString(),
                             subject: details.subject,
                             teacher: details.teacher,
-                            count: remainingLectures,  // Each batch gets the full count
+                            count: remainingLectures,
                             type: details.type,
                             batch: batchNumber
                         ]
@@ -151,7 +155,11 @@ class TimetableController {
         if (!session.subjectDetails) {
             session.subjectDetails = [:]
         }
-        def key = "${params.subject}_${params.class}_${params.type}"
+        
+        def type = params.type
+        def batch = (type == 'Lab' || type == 'Tutorial') ? params.int('batch') : null
+        def key = "${params.subject}_${params.class}_${type}_${batch ?: 'NoBatch'}"
+        
         int lecturesPerWeek = params.int('lecturesPerWeek')
         
         session.subjectDetails[key] = [
@@ -159,7 +167,8 @@ class TimetableController {
             teacher: params.teacher,
             class: params.class,
             lecturesPerWeek: lecturesPerWeek,
-            type: params.type
+            type: type,
+            batch: batch
         ]
         
         generateLectureCards(params.class)
@@ -475,9 +484,10 @@ class TimetableController {
         XSSFRow headerRow = sheet.createRow(0)
         headerRow.createCell(0).setCellValue("Subject")
         headerRow.createCell(1).setCellValue("Type")
-        headerRow.createCell(2).setCellValue("Teacher")
-        headerRow.createCell(3).setCellValue("Class")
-        headerRow.createCell(4).setCellValue("Lectures Per Week")
+        headerRow.createCell(2).setCellValue("Class")
+        headerRow.createCell(3).setCellValue("Batch (for Lab/Tutorial)")
+        headerRow.createCell(4).setCellValue("Teacher")
+        headerRow.createCell(5).setCellValue("Lectures Per Week")
 
         // Create dropdowns
         XSSFDataValidationHelper dvHelper = new XSSFDataValidationHelper(sheet)
@@ -488,12 +498,15 @@ class TimetableController {
         // Type dropdown
         addDropdownValidation(sheet, dvHelper, 1, ["Lecture", "Lab", "Tutorial"])
 
-        // Teacher dropdown
-        addDropdownValidation(sheet, dvHelper, 2, TEACHERS)
-
         // Class dropdown
-        addDropdownValidation(sheet, dvHelper, 3, CLASSES)
+        addDropdownValidation(sheet, dvHelper, 2, CLASSES)
 
+        // Batch dropdown (only for Lab/Tutorial)
+        addDropdownValidation(sheet, dvHelper, 3, ["", "1", "2", "3"])
+
+        // Teacher dropdown
+        addDropdownValidation(sheet, dvHelper, 4, TEACHERS)
+        
         // Set response headers
         response.setContentType("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
         response.setHeader("Content-Disposition", "attachment; filename=subject_mapping_template.xlsx")
@@ -534,27 +547,37 @@ class TimetableController {
                 XSSFRow row = sheet.getRow(i)
                 if (row == null) continue
 
-                def subject = row.getCell(0)?.stringCellValue
-                def type = row.getCell(1)?.stringCellValue
-                def teacher = row.getCell(2)?.stringCellValue
-                def classGroup = row.getCell(3)?.stringCellValue
-                def lecturesPerWeek = row.getCell(4)?.numericCellValue?.intValue()
+                def subject = getCellValueAsString(row.getCell(0))
+                def type = getCellValueAsString(row.getCell(1))
+                def classGroup = getCellValueAsString(row.getCell(2))
+                def batch = getCellValueAsString(row.getCell(3))
+                def teacher = getCellValueAsString(row.getCell(4))
+                def lecturesPerWeek = row.getCell(5)?.numericCellValue?.intValue()
 
-                if (subject && type && teacher && classGroup && lecturesPerWeek) {
-                    def key = "${subject}_${classGroup}_${type}"
+                if (batch) {
+                    try {
+                        batch = batch.toString().toFloat().intValue()
+                    } catch (NumberFormatException e) {
+                        // If parsing fails, keep the original string value
+                    }
+                }
+
+                if (subject && type && classGroup && teacher && lecturesPerWeek != null) {
+                    // Ignore batch for Lecture type
+                    if (type == 'Lecture') {
+                        batch = null
+                    }
+
+                    def key = "${subject}_${classGroup}_${type}_${batch ?: 'NoBatch'}"
                     
                     def entry = [
                         subject: subject,
                         teacher: teacher,
                         class: classGroup,
                         lecturesPerWeek: lecturesPerWeek,
-                        type: type
+                        type: type,
+                        batch: batch
                     ]
-
-                    if (type == "Lab" || type == "Tutorial") {
-                        // For Labs and Tutorials, add batch information
-                        entry.batchCount = 3  // Assuming 3 batches for Labs and Tutorials
-                    }
 
                     session.subjectDetails[key] = entry
                 }
@@ -568,6 +591,26 @@ class TimetableController {
         }
 
         redirect(action: "index")
+    }
+
+    // Helper method to get cell value as string
+    private String getCellValueAsString(XSSFCell cell) {
+        if (cell == null) return null
+        switch (cell.cellType) {
+            case CellType.STRING:
+                return cell.stringCellValue
+            case CellType.NUMERIC:
+                if (DateUtil.isCellDateFormatted(cell)) {
+                    return cell.dateCellValue.format("yyyy-MM-dd")
+                }
+                return String.valueOf(cell.numericCellValue)
+            case CellType.BOOLEAN:
+                return String.valueOf(cell.booleanCellValue)
+            case CellType.FORMULA:
+                return cell.cellFormula
+            default:
+                return null
+        }
     }
 
     def deleteSubject() {

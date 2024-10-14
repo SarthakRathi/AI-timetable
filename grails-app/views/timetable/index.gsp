@@ -74,20 +74,29 @@
                     </select>
                 </div>
                 <div class="mb-3">
-                    <label for="teacher" class="form-label">Teacher:</label>
-                    <select id="teacher" name="teacher" class="form-select" required>
-                        <option value="">Select a teacher</option>
-                        <g:each in="${teachers}" var="teacher">
-                            <option value="${teacher}">${teacher}</option>
-                        </g:each>
-                    </select>
-                </div>
-                <div class="mb-3">
                     <label for="class" class="form-label">Class:</label>
                     <select id="class" name="class" class="form-select" required>
                         <option value="">Select a class</option>
                         <g:each in="${classes}" var="classOption">
                             <option value="${classOption}">${classOption}</option>
+                        </g:each>
+                    </select>
+                </div>
+                <div class="mb-3 batch-field" style="display: none;">
+                    <label for="batch" class="form-label">Batch:</label>
+                    <select id="batch" name="batch" class="form-select">
+                        <option value="">Select a batch</option>
+                        <option value="1">Batch 1</option>
+                        <option value="2">Batch 2</option>
+                        <option value="3">Batch 3</option>
+                    </select>
+                </div>
+                <div class="mb-3">
+                    <label for="teacher" class="form-label">Teacher:</label>
+                    <select id="teacher" name="teacher" class="form-select" required>
+                        <option value="">Select a teacher</option>
+                        <g:each in="${teachers}" var="teacher">
+                            <option value="${teacher}">${teacher}</option>
                         </g:each>
                     </select>
                 </div>
@@ -122,6 +131,7 @@
                         <th>Type</th>
                         <th>Teacher</th>
                         <th>Class</th>
+                        <th>Batch</th>
                         <th>Lectures per Week</th>
                         <th>Delete</th>
                     </tr>
@@ -133,6 +143,15 @@
                             <td>${entry.value.type}</td>
                             <td>${entry.value.teacher}</td>
                             <td>${entry.value.class}</td>
+                            <td>
+                                ${entry.value.batch != null ? 
+                                    (entry.value.batch instanceof Number ? 
+                                        entry.value.batch.intValue() : 
+                                        (entry.value.batch.toString().isNumber() ? 
+                                            entry.value.batch.toString().toFloat().intValue() : 
+                                            entry.value.batch)
+                                    ) : 'N/A'}
+                            </td>
                             <td>${entry.value.lecturesPerWeek}</td>
                             <td><i class="bi bi-trash3-fill" onClick="deleteSubject('${entry.key}')"></i></td>
                         </tr>
@@ -366,6 +385,16 @@
                 if (currentStep > 1) {
                     currentStep--;
                     updateStepperDisplay();
+                }
+            });
+
+            $('#type').change(function() {
+                if ($(this).val() === 'Lab' || $(this).val() === 'Tutorial') {
+                    $('.batch-field').show();
+                    $('#batch').prop('required', true);
+                } else {
+                    $('.batch-field').hide();
+                    $('#batch').prop('required', false);
                 }
             });
 
