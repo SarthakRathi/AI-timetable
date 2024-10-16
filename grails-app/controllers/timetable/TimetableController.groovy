@@ -234,14 +234,17 @@ class TimetableController {
             }
 
             if (canAddLectureToSlot(timetable, day, time, lecture)) {
-            def newLecture = [
-                subject: lecture.subject,
-                teacher: lecture.teacher,
-                room: assignRoom(selectedClass, day, time, lecture.type, session.subjectDetails[lecture.id]),
-                type: lecture.type,
-                batch: lecture.batch,
-                color: session.colorMap[lecture.subject] 
-            ]
+                def subjectKey = "${lecture.subject}_${selectedClass}_${lecture.type}_${lecture.batch ?: 'NoBatch'}"
+                def lectureDetails = session.subjectDetails[subjectKey]
+                
+                def newLecture = [
+                    subject: lecture.subject,
+                    teacher: lecture.teacher,
+                    room: assignRoom(selectedClass, day, time, lecture.type, lectureDetails),
+                    type: lecture.type,
+                    batch: lecture.batch,
+                    color: session.colorMap[lecture.subject] 
+                ]
                 
                 timetable[day][time] << newLecture
 
@@ -472,10 +475,21 @@ class TimetableController {
     }
 
     private String assignRoom(String selectedClass, String day, String time, String type, Map lectureDetails) {
+        log.info("assignRoom called with: selectedClass=${selectedClass}, day=${day}, time=${time}, type=${type}, lectureDetails=${lectureDetails}")
+
+        if (lectureDetails == null) {
+            log.warn("lectureDetails is null, defaulting to automatic room allocation")
+            return assignAutomaticRoom(type, day, time)
+        }
+
         if (lectureDetails.roomAllocation == 'manual' && lectureDetails.manualRoom) {
             return lectureDetails.manualRoom
         }
 
+        return assignAutomaticRoom(type, day, time)
+    }
+
+    private String assignAutomaticRoom(String type, String day, String time) {
         def occupiedRooms = session.timetable.values().collect { classTimetable ->
             classTimetable[day]?[time]?.collect { it.room }
         }.flatten().findAll()
