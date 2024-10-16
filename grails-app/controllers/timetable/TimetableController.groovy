@@ -120,24 +120,25 @@ class TimetableController {
             def remainingLectures = details.lecturesPerWeek - assignedLectures
             
             if (remainingLectures > 0) {
+                def cardBase = [
+                    subject: details.subject,
+                    teacher: details.teacher,
+                    count: remainingLectures,
+                    type: details.type,
+                    roomAllocation: details.roomAllocation,
+                    manualRoom: details.manualRoom
+                ]
+                
                 if (details.type == "Lecture") {
-                    session.lectureCards[selectedClass] << [
-                        id: "${details.subject}_${details.class}_${details.type}".toString(),
-                        subject: details.subject,
-                        teacher: details.teacher,
-                        count: remainingLectures,
-                        type: details.type
+                    session.lectureCards[selectedClass] << cardBase + [
+                        id: "${details.subject}_${details.class}_${details.type}".toString()
                     ]
                 } else {
                     // For Labs and Tutorials, create separate cards for each batch
                     def batches = details.batch ? [details.batch] : ['1', '2', '3']
                     batches.each { batchNumber ->
-                        session.lectureCards[selectedClass] << [
+                        session.lectureCards[selectedClass] << cardBase + [
                             id: "${details.subject}_${details.class}_${details.type}_Batch${batchNumber}".toString(),
-                            subject: details.subject,
-                            teacher: details.teacher,
-                            count: remainingLectures,
-                            type: details.type,
                             batch: batchNumber
                         ]
                     }
@@ -147,11 +148,29 @@ class TimetableController {
     }
 
     def resetTimetable() {
-        def selectedClass = params.selectedClass
-        session.timetable?.remove(selectedClass)
-        session.lectureCards?.remove(selectedClass)
-        generateLectureCards(selectedClass)
-        redirect(action: "index", params: [selectedClass: selectedClass])
+        session.timetable = [:]
+        CLASSES.each { classGroup ->
+            session.timetable[classGroup] = [:]
+            WEEK_DAYS.each { day ->
+                session.timetable[classGroup][day] = [:]
+                TIME_SLOTS.each { time ->
+                    session.timetable[classGroup][day][time] = []
+                }
+            }
+        }
+        session.lectureCards = [:]
+        CLASSES.each { classGroup ->
+            generateLectureCards(classGroup)
+        }
+        
+        flash.message = "Timetable reset successfully"
+
+        // Check if it's an AJAX request
+        if (request.xhr) {
+            render([success: true, message: flash.message] as JSON)
+        } else {
+            redirect(action: "index")
+        }
     }
 
     def addSubject() {
@@ -171,10 +190,14 @@ class TimetableController {
             class: params.class,
             lecturesPerWeek: lecturesPerWeek,
             type: type,
-            batch: batch
+            batch: batch,
+            roomAllocation: params.roomAllocation,
+            manualRoom: params.roomAllocation == 'manual' ? params.manualRoom : null
         ]
         
         generateLectureCards(params.class)
+
+        resetTimetable()
         
         redirect(action: "index", params: [selectedClass: params.class])
     }
@@ -214,7 +237,7 @@ class TimetableController {
             def newLecture = [
                 subject: lecture.subject,
                 teacher: lecture.teacher,
-                room: assignRoom(selectedClass, day, time, lecture.type),
+                room: assignRoom(selectedClass, day, time, lecture.type, session.subjectDetails[lecture.id]),
                 type: lecture.type,
                 batch: lecture.batch,
                 color: session.colorMap[lecture.subject] 
@@ -282,7 +305,7 @@ class TimetableController {
                             subject: card.subject,
                             teacher: card.teacher,
                             class: selectedClass,
-                            room: assignRoom(selectedClass, slot.day, slot.time, card.type),
+                            room: assignRoom(selectedClass, slot.day, slot.time, card.type, session.subjectDetails["${card.subject}_${selectedClass}_${card.type}_${card.batch ?: 'NoBatch'}"]),
                             type: card.type,
                             batch: card.batch
                         ]
@@ -448,7 +471,11 @@ class TimetableController {
         return availableSlots ? availableSlots[0] : null
     }
 
-    private String assignRoom(String selectedClass, String day, String time, String type) {
+    private String assignRoom(String selectedClass, String day, String time, String type, Map lectureDetails) {
+        if (lectureDetails.roomAllocation == 'manual' && lectureDetails.manualRoom) {
+            return lectureDetails.manualRoom
+        }
+
         def occupiedRooms = session.timetable.values().collect { classTimetable ->
             classTimetable[day]?[time]?.collect { it.room }
         }.flatten().findAll()
@@ -488,9 +515,10 @@ class TimetableController {
         headerRow.createCell(0).setCellValue("Subject")
         headerRow.createCell(1).setCellValue("Type")
         headerRow.createCell(2).setCellValue("Class")
-        headerRow.createCell(3).setCellValue("Batch (for Lab/Tutorial)")
+        headerRow.createCell(3).setCellValue("Batch")
         headerRow.createCell(4).setCellValue("Teacher")
-        headerRow.createCell(5).setCellValue("Lectures Per Week")
+        headerRow.createCell(5).setCellValue("Room")
+        headerRow.createCell(6).setCellValue("Lectures Per Week")
 
         // Create dropdowns
         XSSFDataValidationHelper dvHelper = new XSSFDataValidationHelper(sheet)
@@ -509,6 +537,10 @@ class TimetableController {
 
         // Teacher dropdown
         addDropdownValidation(sheet, dvHelper, 4, TEACHERS)
+
+        // Room Allocation dropdown
+        List<String> roomOptions = [""] + CLASSROOMS + LABROOMS + TUTORIALROOMS
+        addDropdownValidation(sheet, dvHelper, 5, roomOptions)
         
         // Set response headers
         response.setContentType("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
@@ -555,15 +587,8 @@ class TimetableController {
                 def classGroup = getCellValueAsString(row.getCell(2))
                 def batch = getCellValueAsString(row.getCell(3))
                 def teacher = getCellValueAsString(row.getCell(4))
-                def lecturesPerWeek = row.getCell(5)?.numericCellValue?.intValue()
-
-                if (batch) {
-                    try {
-                        batch = batch.toString().toFloat().intValue()
-                    } catch (NumberFormatException e) {
-                        // If parsing fails, keep the original string value
-                    }
-                }
+                def room = getCellValueAsString(row.getCell(5))
+                def lecturesPerWeek = row.getCell(6)?.numericCellValue?.intValue()
 
                 if (subject && type && classGroup && teacher && lecturesPerWeek != null) {
                     // Ignore batch for Lecture type
@@ -579,7 +604,9 @@ class TimetableController {
                         class: classGroup,
                         lecturesPerWeek: lecturesPerWeek,
                         type: type,
-                        batch: batch
+                        batch: batch,
+                        roomAllocation: room ? 'manual' : 'automatic',
+                        manualRoom: room
                     ]
 
                     session.subjectDetails[key] = entry
@@ -588,6 +615,9 @@ class TimetableController {
 
             workbook.close()
             flash.message = "Subject mapping uploaded successfully"
+            
+            // Reset the timetable after uploading new subject mappings
+            resetTimetableWithoutRedirect()
         } catch (Exception e) {
             log.error("Error processing Excel file: ${e.message}", e)
             flash.message = "Error processing Excel file: ${e.message}"
@@ -606,7 +636,9 @@ class TimetableController {
                 if (DateUtil.isCellDateFormatted(cell)) {
                     return cell.dateCellValue.format("yyyy-MM-dd")
                 }
-                return String.valueOf(cell.numericCellValue)
+                // Format numeric values to remove decimal places for whole numbers
+                def value = cell.numericCellValue
+                return (value == Math.floor(value)) ? String.valueOf(value.intValue()) : String.valueOf(value)
             case CellType.BOOLEAN:
                 return String.valueOf(cell.booleanCellValue)
             case CellType.FORMULA:
@@ -616,10 +648,30 @@ class TimetableController {
         }
     }
 
+    private void resetTimetableWithoutRedirect() {
+        session.timetable = [:]
+        CLASSES.each { classGroup ->
+            session.timetable[classGroup] = [:]
+            WEEK_DAYS.each { day ->
+                session.timetable[classGroup][day] = [:]
+                TIME_SLOTS.each { time ->
+                    session.timetable[classGroup][day][time] = []
+                }
+            }
+        }
+        session.lectureCards = [:]
+        CLASSES.each { classGroup ->
+            generateLectureCards(classGroup)
+        }
+    }
+
     def deleteSubject() {
         def key = params.key
         if (session.subjectDetails?.containsKey(key)) {
             session.subjectDetails.remove(key)
+
+            resetTimetable()
+
             render([success: true, message: "Subject deleted successfully"] as JSON)
         } else {
             render([success: false, message: "Subject not found"] as JSON)

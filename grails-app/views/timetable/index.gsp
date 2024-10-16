@@ -101,6 +101,22 @@
                     </select>
                 </div>
                 <div class="mb-3">
+                    <label for="roomAllocation" class="form-label">Room Allocation:</label>
+                    <select id="roomAllocation" name="roomAllocation" class="form-select" required>
+                        <option value="automatic">Automatic</option>
+                        <option value="manual">Manual</option>
+                    </select>
+                </div>
+                <div class="mb-3" id="manualRoomSelection" style="display: none;">
+                    <label for="manualRoom" class="form-label">Select Room:</label>
+                    <select id="manualRoom" name="manualRoom" class="form-select">
+                        <option value="">Select a room</option>
+                        <g:each in="${allRooms}" var="room">
+                            <option value="${room}">${room}</option>
+                        </g:each>
+                    </select>
+                </div>
+                <div class="mb-3">
                     <label for="lecturesPerWeek" class="form-label">Number of Lectures per Week:</label>
                     <input type="number" id="lecturesPerWeek" name="lecturesPerWeek" class="form-control" required min="1">
                 </div>
@@ -132,6 +148,7 @@
                         <th>Teacher</th>
                         <th>Class</th>
                         <th>Batch</th>
+                        <th>Room Allocation</th>
                         <th>Lectures per Week</th>
                         <th>Delete</th>
                     </tr>
@@ -152,6 +169,7 @@
                                             entry.value.batch)
                                     ) : 'N/A'}
                             </td>
+                            <td>${entry.value.roomAllocation == 'automatic' ? 'Automatic' : entry.value.manualRoom}</td>
                             <td>${entry.value.lecturesPerWeek}</td>
                             <td><i class="bi bi-trash3-fill" onClick="deleteSubject('${entry.key}')"></i></td>
                         </tr>
@@ -190,11 +208,12 @@
                             <g:if test="${card.type != 'Lecture'}">
                                 <h6>Batch: ${card.batch}</h6>
                             </g:if>
+                            <h6>Room: ${card.roomAllocation == 'automatic' ? 'Automatic' : card.manualRoom}</h6>
                             <h6>Remaining: <span class="lecture-count">${card.count}</span></h6>
                         </div>
                     </div>
                 </g:each>
-            </div>                                                                                                                                                                                             
+            </div>                                                                                                                                                                                   
 
             <!-- Timetable display -->
             <h2>Current Timetable for ${selectedClass}</h2>
@@ -396,6 +415,16 @@
                 } else {
                     $('.batch-field').hide();
                     $('#batch').prop('required', false);
+                }
+            });
+
+            $('#roomAllocation').change(function() {
+                if ($(this).val() === 'manual') {
+                    $('#manualRoomSelection').show();
+                    $('#manualRoom').prop('required', true);
+                } else {
+                    $('#manualRoomSelection').hide();
+                    $('#manualRoom').prop('required', false);
                 }
             });
 
@@ -652,7 +681,8 @@
                         cardHtml += '<h6>Batch: ' + card.batch + '</h6>';
                     }
                     
-                    cardHtml += '<h6>Remaining: <span class="lecture-count">' + card.count + '</span></h6>' +
+                    cardHtml += '<h6>Room: ' + (card.roomAllocation === 'automatic' ? 'Automatic' : card.manualRoom) + '</h6>' +
+                        '<h6>Remaining: <span class="lecture-count">' + card.count + '</span></h6>' +
                         '</div>' +
                         '</div>';
                     
@@ -703,6 +733,23 @@
                     }
                 }
             }
+
+            $('form[action$="/resetTimetable"]').submit(function(e) {
+                e.preventDefault();
+                $.ajax({
+                    url: this.action,
+                    method: 'POST',
+                    data: $(this).serialize(),
+                    success: function(response) {
+                        // Reload the page to reflect the changes
+                        window.location.reload();
+                    },
+                    error: function(jqXHR, textStatus, errorThrown) {
+                        console.error("AJAX error:", jqXHR, textStatus, errorThrown);
+                        alert('Failed to reset timetable. Error: ' + errorThrown);
+                    }
+                });
+            });
         });
     </script>
 </body>
