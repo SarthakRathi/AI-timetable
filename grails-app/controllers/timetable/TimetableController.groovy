@@ -19,8 +19,9 @@ class TimetableController {
     // Predefined lists
     private static final List<String> SUBJECTS = ['Math', 'Science', 'History', 'Art', 'Physical Education']
     private static final List<String> CLASSES = ['FY', 'SY', 'TY']
-    private static final List<String> ROOMS = ['101', '102', '103', '104', '105']
+    private static final List<String> CLASSROOMS = ['101', '102', '103', '104', '105']
     private static final List<String> LABROOMS = ['Lab1', 'Lab2', 'Lab3']
+    private static final List<String> TUTORIALROOMS = ['Tutorial1', 'Tutorial2', 'Tutorial3']
     private static final List<String> TEACHERS = ['Rohan', 'Ravi', 'Ashwin', 'Karan', 'Priya']
     private static final List<String> WEEK_DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday']
     private static final List<String> TIME_SLOTS = ['8:00', '09:00', '10:00', '11:00', '12:00', '1:00', '2:00', '3:00', '4:00', '5:00']
@@ -72,7 +73,9 @@ class TimetableController {
             lectureCards: session.lectureCards?[selectedClass] ?: [],
             currentStep: currentStep,
             labs: LABROOMS.collect { it.encodeAsJSON() },
-            rooms: ROOMS.collect { it.encodeAsJSON() },
+            classrooms: CLASSROOMS.collect { it.encodeAsJSON() },
+            tutorialRooms: TUTORIALROOMS.collect { it.encodeAsJSON() },
+            allRooms: (CLASSROOMS + LABROOMS + TUTORIALROOMS).collect { it.encodeAsJSON() },
             colorMap: colorMap  
         ]
     }
@@ -208,7 +211,7 @@ class TimetableController {
             }
 
             if (canAddLectureToSlot(timetable, day, time, lecture)) {
-                def newLecture = [
+            def newLecture = [
                 subject: lecture.subject,
                 teacher: lecture.teacher,
                 room: assignRoom(selectedClass, day, time, lecture.type),
@@ -452,7 +455,7 @@ class TimetableController {
 
         switch (type) {
             case "Lecture":
-                def availableRooms = ROOMS - occupiedRooms
+                def availableRooms = CLASSROOMS - occupiedRooms
                 return availableRooms ? availableRooms[new Random().nextInt(availableRooms.size())] : "TBD"
             
             case "Lab":
@@ -460,8 +463,8 @@ class TimetableController {
                 return availableLabRooms ? availableLabRooms[new Random().nextInt(availableLabRooms.size())] : "TBD"
             
             case "Tutorial":
-                def availableRooms = (ROOMS + LABROOMS) - occupiedRooms
-                return availableRooms ? availableRooms[new Random().nextInt(availableRooms.size())] : "TBD"
+                def availableTutorialRooms = TUTORIALROOMS - occupiedRooms
+                return availableTutorialRooms ? availableTutorialRooms[new Random().nextInt(availableTutorialRooms.size())] : "TBD"
             
             default:
                 return "TBD"
@@ -650,10 +653,7 @@ class TimetableController {
             case 'option2': // Teacher
                 timetable = fetchTimetableForTeacher(value)
                 break
-            case 'option3': // Lab
-                timetable = fetchTimetableForLab(value)
-                break
-            case 'option4': // Room
+            case 'option3': // Room (now includes both classrooms and tutorial rooms)
                 timetable = fetchTimetableForRoom(value)
                 break
             default:

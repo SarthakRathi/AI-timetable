@@ -264,8 +264,7 @@
                     <select id="dropdown1" class="form-control">
                         <option value="option1">Class</option>
                         <option value="option2">Teacher</option>
-                        <option value="option3">Lab</option>
-                        <option value="option4">Room</option>
+                        <option value="option3">Room</option>
                     </select>
                 </div>
 
@@ -314,10 +313,12 @@
             classes: ${raw((classes as JSON).toString())},
             teachers: ${raw((teachers as JSON).toString())},
             labs: ${raw((labs as JSON).toString())},
-            rooms: ${raw((rooms as JSON).toString())},
+            classrooms: ${raw((classrooms as JSON).toString())},
+            tutorialRooms: ${raw((tutorialRooms as JSON).toString())},
+            allRooms: ${raw((allRooms as JSON).toString())},
             weekDays: ${raw((weekDays as JSON).toString())},
             timeSlots: ${raw((timeSlots as JSON).toString())},
-            colorMap: ${raw((colorMap as JSON).toString())}  // Add this line
+            colorMap: ${raw((colorMap as JSON).toString())}
         };
 
         function deleteSubject(key) {
@@ -505,10 +506,7 @@
                         options = data.teachers;
                         break;
                     case 'option3':
-                        options = data.labs;
-                        break;
-                    case 'option4':
-                        options = data.rooms;
+                        options = data.classrooms.concat(data.tutorialRooms).concat(data.labs); // Include labs here
                         break;
                 }
 
