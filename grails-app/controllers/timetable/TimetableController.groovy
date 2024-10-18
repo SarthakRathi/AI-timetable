@@ -12,17 +12,18 @@ import org.apache.poi.ss.util.CellRangeAddressList
 import org.apache.poi.xssf.usermodel.XSSFDataValidation
 import org.apache.poi.xssf.usermodel.XSSFDataValidationConstraint
 import org.apache.poi.xssf.usermodel.XSSFDataValidationHelper
+import org.apache.poi.xssf.usermodel.XSSFName
 
 class TimetableController {
     ExcelService excelService
 
     // Predefined lists
-    private static final List<String> SUBJECTS = ['Math', 'Science', 'History', 'Art', 'Physical Education']
-    private static final List<String> CLASSES = ['FY', 'SY', 'TY']
+    private static final List<String> SUBJECTS = ['Data Structures & Algorithms', 'Database Management System', 'Discrete Mathematics', 'Probability & Statistics', 'Design Thinking', 'Universal Human Value', 'Data Ethics', 'Artificial Intelligence', 'Deep Learning', 'Big Data Analytics', 'Data Communication & Networking', 'Research Methodology And IPR', 'Project-I', 'Professional Elective']
+    private static final List<String> CLASSES = ['SY A', 'SY B', 'TY A']
     private static final List<String> CLASSROOMS = ['101', '102', '103', '104', '105']
     private static final List<String> LABROOMS = ['Lab1', 'Lab2', 'Lab3']
     private static final List<String> TUTORIALROOMS = ['Tutorial1', 'Tutorial2', 'Tutorial3']
-    private static final List<String> TEACHERS = ['Rohan', 'Ravi', 'Ashwin', 'Karan', 'Priya']
+    private static final List<String> TEACHERS = ['Nilesh Sable', 'Chandrakant Banchhor', 'Anuradha Yenkikar', 'Pradnya Mehta', 'Amol Patil', 'Pranjal Pandit', 'Vidya Gaikwad']
     private static final List<String> WEEK_DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday']
     private static final List<String> TIME_SLOTS = ['8:00', '09:00', '10:00', '11:00', '12:00', '1:00', '2:00', '3:00', '4:00', '5:00']
     private static final List<String> COLORS = ['#87A2FF', '#C4D7FF', '#FFD7C4', '#FFF4B5', '#E7CCCC', '#CDC1FF', '#CEDF9F', '#F1F3C2', '#FFC6C6', '#95D2B3']
@@ -553,8 +554,8 @@ class TimetableController {
         addDropdownValidation(sheet, dvHelper, 4, TEACHERS)
 
         // Room Allocation dropdown
-        List<String> roomOptions = [""] + CLASSROOMS + LABROOMS + TUTORIALROOMS
-        addDropdownValidation(sheet, dvHelper, 5, roomOptions)
+        List<String> allRooms = [""] + CLASSROOMS + LABROOMS + TUTORIALROOMS
+        addDropdownValidation(sheet, dvHelper, 5, allRooms)
         
         // Set response headers
         response.setContentType("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
@@ -569,9 +570,33 @@ class TimetableController {
 
     private void addDropdownValidation(XSSFSheet sheet, XSSFDataValidationHelper dvHelper, int columnIndex, List<String> items) {
         CellRangeAddressList addressList = new CellRangeAddressList(1, 1000, columnIndex, columnIndex)
-        XSSFDataValidationConstraint dvConstraint = (XSSFDataValidationConstraint) dvHelper.createExplicitListConstraint(items as String[])
-        XSSFDataValidation validation = (XSSFDataValidation) dvHelper.createValidation(dvConstraint, addressList)
-        sheet.addValidationData(validation)
+        
+        if (items.join(",").length() <= 255) {
+            // If the list is short enough, use the standard method
+            XSSFDataValidationConstraint dvConstraint = (XSSFDataValidationConstraint) dvHelper.createExplicitListConstraint(items as String[])
+            XSSFDataValidation validation = (XSSFDataValidation) dvHelper.createValidation(dvConstraint, addressList)
+            sheet.addValidationData(validation)
+        } else {
+            // If the list is too long, create a named range and refer to it
+            String rangeName = "ValidList_$columnIndex"
+            XSSFName namedRange = sheet.getWorkbook().createName()
+            namedRange.setNameName(rangeName)
+            
+            // Create a new sheet for the list
+            XSSFSheet listSheet = sheet.getWorkbook().createSheet("_" + rangeName)
+            for (int i = 0; i < items.size(); i++) {
+                listSheet.createRow(i).createCell(0).setCellValue(items[i])
+            }
+            
+            // Set the reference to the list
+            String reference = "'" + listSheet.getSheetName() + "'!\$A\$1:\$A\$" + items.size()
+            namedRange.setRefersToFormula(reference)
+            
+            // Create the validation constraint
+            XSSFDataValidationConstraint dvConstraint = (XSSFDataValidationConstraint) dvHelper.createFormulaListConstraint(rangeName)
+            XSSFDataValidation validation = (XSSFDataValidation) dvHelper.createValidation(dvConstraint, addressList)
+            sheet.addValidationData(validation)
+        }
     }
 
     def uploadSubjectMapping() {
