@@ -26,8 +26,7 @@ class TimetableController {
     private static final List<String> TEACHERS = ['Nilesh Sable', 'Chandrakant Banchhor', 'Anuradha Yenkikar', 'Pradnya Mehta', 'Amol Patil', 'Pranjal Pandit', 'Vidya Gaikwad']
     private static final List<String> WEEK_DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday']
     private static final List<String> TIME_SLOTS = ['8:00', '09:00', '10:00', '11:00', '12:00', '1:00', '2:00', '3:00', '4:00', '5:00']
-    private static final List<String> COLORS = ['#87A2FF', '#C4D7FF', '#FFD7C4', '#FFF4B5', '#E7CCCC', '#CDC1FF', '#CEDF9F', '#F1F3C2', '#FFC6C6', '#95D2B3']
-
+    
     def index() {
         def selectedClass = params.selectedClass ?: CLASSES[0]
         def currentStep = params.currentStep ? params.int('currentStep') : 1
@@ -81,16 +80,20 @@ class TimetableController {
         ]
     }
 
+    private static final Map<String, String> SESSION_COLORS = [
+        'Lecture': '#ACDDDE',
+        'Lab': '#FEF8DD',
+        'Tutorial': '#DCEDC1'
+    ]
+
     private Map<String, String> assignColorsToSubjects() {
         if (!session.colorMap) {
             session.colorMap = [:]
         }
+        
         if (session.subjectDetails) {
-            def subjects = session.subjectDetails.values().collect { it.subject }.unique()
-            subjects.each { subject ->
-                if (!session.colorMap.containsKey(subject)) {
-                    session.colorMap[subject] = COLORS[new Random().nextInt(COLORS.size())]
-                }
+            session.subjectDetails.each { key, details ->
+                session.colorMap[details.subject] = SESSION_COLORS[details.type]
             }
         }
         return session.colorMap
@@ -244,13 +247,12 @@ class TimetableController {
                     room: assignRoom(selectedClass, day, time, lecture.type, lectureDetails),
                     type: lecture.type,
                     batch: lecture.batch,
-                    color: session.colorMap[lecture.subject] 
+                    color: SESSION_COLORS[lecture.type]
                 ]
                 
                 timetable[day][time] << newLecture
 
                 if (lecture.type == "Lab") {
-                    // Add the lab to the next slot as well
                     def nextTimeIndex = TIME_SLOTS.indexOf(time) + 1
                     if (nextTimeIndex < TIME_SLOTS.size()) {
                         def nextTime = TIME_SLOTS[nextTimeIndex]
@@ -259,7 +261,6 @@ class TimetableController {
                     }
                 }
 
-                // Decrement available lecture card count only for the specific batch
                 lecture.count--
                 session.timetable[selectedClass] = timetable
                 render([success: true, message: "Lecture assigned successfully", lecture: newLecture, nextSlot: lecture.type == "Lab" ? TIME_SLOTS[TIME_SLOTS.indexOf(time) + 1] : null] as JSON)
@@ -311,7 +312,8 @@ class TimetableController {
                             class: selectedClass,
                             room: assignRoom(selectedClass, slot.day, slot.time, card.type, session.subjectDetails["${card.subject}_${selectedClass}_${card.type}_${card.batch ?: 'NoBatch'}"]),
                             type: card.type,
-                            batch: card.batch
+                            batch: card.batch,
+                            color: SESSION_COLORS[card.type]
                         ]
 
                         timetable[slot.day][slot.time] << lecture
