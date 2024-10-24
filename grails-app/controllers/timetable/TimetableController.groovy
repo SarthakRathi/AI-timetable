@@ -410,25 +410,66 @@ class TimetableController {
             if (nextTimeIndex < TIME_SLOTS.size()) {
                 def nextTime = TIME_SLOTS[nextTimeIndex]
                 def nextSlot = timetable[day]?[nextTime] ?: []
-                // Check if there's space for this batch in both current and next slot
+                
+                // Check all conditions for both current and next slot
                 return canAddBatchToSlot(currentSlot, newLecture) && 
                     canAddBatchToSlot(nextSlot, newLecture) &&
                     !isTeacherOrRoomOccupied(currentSlot, newLecture) &&
-                    !isTeacherOrRoomOccupied(nextSlot, newLecture)
+                    !isTeacherOrRoomOccupied(nextSlot, newLecture) &&
+                    !isLabRoomOccupiedByOtherClass(day, time, newLecture) &&
+                    !isLabRoomOccupiedByOtherClass(day, nextTime, newLecture)
             }
             return false
         } else if (newLecture.type == "Tutorial") {
             return canAddBatchToSlot(currentSlot, newLecture) &&
-                !isTeacherOrRoomOccupied(currentSlot, newLecture)
+                !isTeacherOrRoomOccupied(currentSlot, newLecture) &&
+                !isTutorialRoomOccupiedByOtherClass(day, time, newLecture)
         }
 
         return false
     }
 
+    private boolean isLabRoomOccupiedByOtherClass(String day, String time, Map newLecture) {
+        return session.timetable.any { className, classTimetable ->
+            classTimetable[day]?[time]?.any { session ->
+                session.type == 'Lab' && LABROOMS.contains(session.room)
+            }
+        }
+    }
+
+    private boolean isTutorialRoomOccupiedByOtherClass(String day, String time, Map newLecture) {
+        return session.timetable.any { className, classTimetable ->
+            classTimetable[day]?[time]?.any { session ->
+                session.type == 'Tutorial' && TUTORIALROOMS.contains(session.room)
+            }
+        }
+    }
+
     private boolean isTeacherOrRoomOccupied(List slotSessions, Map newLecture) {
         return slotSessions.any { session ->
-            session.teacher == newLecture.teacher || session.room == newLecture.room
+            session.teacher == newLecture.teacher || 
+            (session.room == newLecture.room) ||
+            // For labs/tutorials, check if room type is already in use
+            (isRoomTypeConflict(session, newLecture))
         }
+    }
+
+    private boolean isRoomTypeConflict(Map session, Map newLecture) {
+        // If either session is a lab or tutorial, check for room type conflicts
+        if (session.type in ['Lab', 'Tutorial'] || newLecture.type in ['Lab', 'Tutorial']) {
+            def currentRoom = session.room
+            def newRoom = newLecture.room
+            
+            // Check if rooms are of the same type (lab or tutorial)
+            boolean isCurrentLabRoom = LABROOMS.contains(currentRoom)
+            boolean isNewLabRoom = LABROOMS.contains(newRoom)
+            boolean isCurrentTutorialRoom = TUTORIALROOMS.contains(currentRoom)
+            boolean isNewTutorialRoom = TUTORIALROOMS.contains(newRoom)
+            
+            return (isCurrentLabRoom && isNewLabRoom) || 
+                (isCurrentTutorialRoom && isNewTutorialRoom)
+        }
+        return false
     }
 
     private boolean isTeacherAvailable(String selectedClass, String day, String time, String teacher) {
@@ -493,9 +534,9 @@ class TimetableController {
     }
 
     private String assignAutomaticRoom(String type, String day, String time) {
-        def occupiedRooms = session.timetable.values().collect { classTimetable ->
-            classTimetable[day]?[time]?.collect { it.room }
-        }.flatten().findAll()
+        def occupiedRooms = getAllOccupiedRooms(day, time)
+        def occupiedLabRooms = getOccupiedLabRooms(day, time)
+        def occupiedTutorialRooms = getOccupiedTutorialRooms(day, time)
 
         switch (type) {
             case "Lecture":
@@ -503,16 +544,36 @@ class TimetableController {
                 return availableRooms ? availableRooms[new Random().nextInt(availableRooms.size())] : "TBD"
             
             case "Lab":
-                def availableLabRooms = LABROOMS - occupiedRooms
+                // For labs, ensure we don't assign same lab room to different batches
+                def availableLabRooms = LABROOMS - occupiedLabRooms
                 return availableLabRooms ? availableLabRooms[new Random().nextInt(availableLabRooms.size())] : "TBD"
             
             case "Tutorial":
-                def availableTutorialRooms = TUTORIALROOMS - occupiedRooms
+                // For tutorials, ensure we don't assign same tutorial room to different batches
+                def availableTutorialRooms = TUTORIALROOMS - occupiedTutorialRooms
                 return availableTutorialRooms ? availableTutorialRooms[new Random().nextInt(availableTutorialRooms.size())] : "TBD"
             
             default:
                 return "TBD"
         }
+    }
+
+    private List<String> getAllOccupiedRooms(String day, String time) {
+        session.timetable.values().collect { classTimetable ->
+            classTimetable[day]?[time]?.collect { it.room }
+        }.flatten().findAll()
+    }
+
+    private List<String> getOccupiedLabRooms(String day, String time) {
+        session.timetable.values().collect { classTimetable ->
+            classTimetable[day]?[time]?.findAll { it.type == 'Lab' }?.collect { it.room }
+        }.flatten().findAll()
+    }
+
+    private List<String> getOccupiedTutorialRooms(String day, String time) {
+        session.timetable.values().collect { classTimetable ->
+            classTimetable[day]?[time]?.findAll { it.type == 'Tutorial' }?.collect { it.room }
+        }.flatten().findAll()
     }
 
     private Map filterSubjectDetailsByClass(String classGroup) {
