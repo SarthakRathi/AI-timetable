@@ -202,7 +202,7 @@
             <div id="lectureCards" class="row mb-3">
                 <g:each in="${lectureCards}" var="card">
                     <div class="col-md-3 mb-2">
-                        <div class="lecture-card shadow p-3 rounded" data-id="${card.id}" style="background-color: ${colorMap[card.subject] ?: '#FFFFFF'};">
+                        <div class="lecture-card shadow p-3 rounded" data-id="${card.id}">
                             <h6>${card.subject} (${card.type})</h6>
                             <h6>Teacher: ${card.teacher}</h6>
                             <g:if test="${card.type != 'Lecture'}">
@@ -336,8 +336,7 @@
             tutorialRooms: ${raw((tutorialRooms as JSON).toString())},
             allRooms: ${raw((allRooms as JSON).toString())},
             weekDays: ${raw((weekDays as JSON).toString())},
-            timeSlots: ${raw((timeSlots as JSON).toString())},
-            colorMap: ${raw((colorMap as JSON).toString())}
+            timeSlots: ${raw((timeSlots as JSON).toString())}
         };
 
         function deleteSubject(key) {
@@ -448,7 +447,7 @@
                     },
                     success: function(response) {
                         if (response.success) {
-                            updateStep3TimetableView(response.timetable, selectedType, selectedValue, response.colorMap);
+                            updateStep3TimetableView(response.timetable, selectedType, selectedValue);
                         } else {
                             alert('Error fetching timetable: ' + (response.message || 'Unknown error'));
                         }
@@ -460,7 +459,7 @@
                 });
             });
             
-            function updateStep3TimetableView(timetable, selectedType, selectedValue, colorMap) {
+            function updateStep3TimetableView(timetable, selectedType, selectedValue) {
                 $('#step3TimetableTitle').text('Timetable for ' + getEntityTypeLabel(selectedType) + ': ' + selectedValue);
                 
                 var tbody = $('#step3Timetable tbody');
@@ -474,9 +473,7 @@
                         
                         if (sessions.length > 0) {
                             sessions.forEach(function(session) {
-                                var backgroundColor = colorMap[session.subject] || '#FFFFFF';
                                 var content = $('<div>').css({
-                                    'background-color': backgroundColor,
                                     'padding': '5px',
                                     'margin-bottom': '5px'
                                 });
@@ -628,9 +625,8 @@
                     data: { selectedClass: $('#selectedClass').val() },
                     success: function(response) {
                         if (response.success) {
-                            data.colorMap = response.colorMap; // Update the colorMap in the data object
-                            updateTimetableView(response.timetable, response.colorMap);
-                            updateLectureCardsView(response.lectureCards, response.colorMap);
+                            updateTimetableView(response.timetable);
+                            updateLectureCardsView(response.lectureCards);
                         } else {
                             alert('Error generating timetable: ' + (response.message || 'Unknown error'));
                         }
@@ -642,7 +638,7 @@
                 });
             });
 
-            function updateTimetableView(timetable, colorMap) {
+            function updateTimetableView(timetable) {
                 $('.timetable-cell').each(function() {
                     const day = $(this).data('day');
                     const time = $(this).data('time');
@@ -651,8 +647,7 @@
                     let content = sessions.length > 0 ? '' : '-';  // Default content for empty slots
 
                     sessions.forEach((session) => {
-                        const backgroundColor = colorMap[session.subject] || '#FFFFFF'; // Default to white if no color found
-                        content += '<div style="background-color: ' + backgroundColor + '; padding: 5px; margin-bottom: 5px;">';
+                        content += '<div style="padding: 5px; margin-bottom: 5px;">';
                         content += (session.type !== 'Lecture' ? 'Batch ' + (session.batch || 'N/A') + '<br>' : '') +
                                 'Subject: ' + (session.subject || 'N/A') + '<br>' +
                                 'Teacher: ' + (session.teacher || 'N/A') + '<br>' +
@@ -667,13 +662,11 @@
                 });
             }
 
-            function updateLectureCardsView(lectureCards, colorMap) {
-                colorMap = colorMap || data.colorMap;  // Use the colorMap from data if not provided
+            function updateLectureCardsView(lectureCards) {
                 $('#lectureCards').empty();
                 lectureCards.forEach(function(card) {
-                    var backgroundColor = colorMap[card.subject] || '#FFFFFF';
                     var cardHtml = '<div class="col-md-3 mb-2">' +
-                        '<div class="lecture-card shadow p-3 rounded" data-id="' + card.id + '" style="background-color: ' + backgroundColor + ';">' +
+                        '<div class="lecture-card shadow p-3 rounded" data-id="' + card.id + '">' +
                         '<h6>' + card.subject + ' (' + card.type + ')</h6>' +
                         '<h6>Teacher: ' + card.teacher + '</h6>';
                     
@@ -695,8 +688,7 @@
                 let currentContent = cell.html().trim();
 
                 if (lecture) {
-                    let backgroundColor = data.colorMap[lecture.subject] || '#FFFFFF';
-                    let newContent = '<div style="background-color: ' + backgroundColor + '; padding: 5px; margin-bottom: 5px;">';
+                    let newContent = '<div style="padding: 5px; margin-bottom: 5px;">';
                     if (lecture.type !== 'Lecture') {
                         newContent += 'Batch ' + (lecture.batch || 'N/A') + '<br>';
                     }

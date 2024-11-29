@@ -59,7 +59,6 @@ class TimetableController {
         generateLectureCards(selectedClass)
         def filteredSubjectDetails = filterSubjectDetailsByClass(selectedClass)
         def filteredTimetable = filterTimetableByClass(selectedClass)
-        def colorMap = assignColorsToSubjects()
 
         [
             subjectDetails: session.subjectDetails ?: [:],
@@ -75,28 +74,8 @@ class TimetableController {
             labs: LABROOMS.collect { it.encodeAsJSON() },
             classrooms: CLASSROOMS.collect { it.encodeAsJSON() },
             tutorialRooms: TUTORIALROOMS.collect { it.encodeAsJSON() },
-            allRooms: (CLASSROOMS + LABROOMS + TUTORIALROOMS).collect { it.encodeAsJSON() },
-            colorMap: colorMap  
+            allRooms: (CLASSROOMS + LABROOMS + TUTORIALROOMS).collect { it.encodeAsJSON() }
         ]
-    }
-
-    private static final Map<String, String> SESSION_COLORS = [
-        'Lecture': '#ACDDDE',
-        'Lab': '#FEF8DD',
-        'Tutorial': '#DCEDC1'
-    ]
-
-    private Map<String, String> assignColorsToSubjects() {
-        if (!session.colorMap) {
-            session.colorMap = [:]
-        }
-        
-        if (session.subjectDetails) {
-            session.subjectDetails.each { key, details ->
-                session.colorMap[details.subject] = SESSION_COLORS[details.type]
-            }
-        }
-        return session.colorMap
     }
 
     private void generateLectureCards(String selectedClass) {
@@ -246,8 +225,7 @@ class TimetableController {
                     teacher: lecture.teacher,
                     room: assignRoom(selectedClass, day, time, lecture.type, lectureDetails),
                     type: lecture.type,
-                    batch: lecture.batch,
-                    color: SESSION_COLORS[lecture.type]
+                    batch: lecture.batch
                 ]
                 
                 timetable[day][time] << newLecture
@@ -312,8 +290,7 @@ class TimetableController {
                             class: selectedClass,
                             room: assignRoom(selectedClass, slot.day, slot.time, card.type, session.subjectDetails["${card.subject}_${selectedClass}_${card.type}_${card.batch ?: 'NoBatch'}"]),
                             type: card.type,
-                            batch: card.batch,
-                            color: SESSION_COLORS[card.type]
+                            batch: card.batch
                         ]
 
                         timetable[slot.day][slot.time] << lecture
@@ -332,11 +309,10 @@ class TimetableController {
                 }
             }
 
-            def colorMap = assignColorsToSubjects()
             session.timetable[selectedClass] = timetable
             session.lectureCards[selectedClass] = lectureCards
 
-            render([success: true, timetable: timetable, lectureCards: lectureCards, colorMap: colorMap] as JSON)
+            render([success: true, timetable: timetable, lectureCards: lectureCards] as JSON)
         } catch (Exception e) {
             log.error("Error generating timetable: ${e.message}", e)
             render([success: false, message: "Error generating timetable: ${e.message}"] as JSON)
@@ -815,7 +791,7 @@ class TimetableController {
                 return
         }
 
-        render([success: true, timetable: timetable, colorMap: session.colorMap] as JSON)
+        render([success: true, timetable: timetable] as JSON)
     }
 
     private Map fetchTimetableForTeacher(String teacher) {
