@@ -2,20 +2,18 @@
 package timetable
 
 import grails.converters.JSON
+import org.apache.poi.ss.usermodel.*
+import org.apache.poi.xssf.usermodel.*
+import org.apache.poi.ss.usermodel.FillPatternType
+import org.apache.poi.ss.usermodel.IndexedColors
+import org.apache.poi.xssf.usermodel.XSSFWorkbook
 import org.apache.poi.xssf.usermodel.XSSFSheet
 import org.apache.poi.xssf.usermodel.XSSFRow
-import org.apache.poi.xssf.usermodel.XSSFWorkbook
-import org.apache.poi.ss.usermodel.CellType
-import org.apache.poi.ss.usermodel.DateUtil
 import org.apache.poi.xssf.usermodel.XSSFCell
 import org.apache.poi.ss.util.CellRangeAddressList
-import org.apache.poi.xssf.usermodel.XSSFDataValidation
-import org.apache.poi.xssf.usermodel.XSSFDataValidationConstraint
-import org.apache.poi.xssf.usermodel.XSSFDataValidationHelper
-import org.apache.poi.xssf.usermodel.XSSFName
+
 
 class TimetableController {
-    ExcelService excelService
 
     // Predefined lists
     private static final List<String> SUBJECTS = ['Data Structures & Algorithms', 'Database Management System', 'Discrete Mathematics', 'Probability & Statistics', 'Design Thinking', 'Universal Human Value', 'Data Ethics', 'Artificial Intelligence', 'Deep Learning', 'Big Data Analytics', 'Data Communication & Networking', 'Research Methodology And IPR', 'Project-I', 'Professional Elective']
@@ -76,6 +74,26 @@ class TimetableController {
             tutorialRooms: TUTORIALROOMS.collect { it.encodeAsJSON() },
             allRooms: (CLASSROOMS + LABROOMS + TUTORIALROOMS).collect { it.encodeAsJSON() }
         ]
+    }
+
+    def deleteMultipleSubjects() {
+        def data = request.JSON
+        def keys = data.keys
+
+        try {
+            keys.each { key ->
+                if (session.subjectDetails?.containsKey(key)) {
+                    session.subjectDetails.remove(key)
+                }
+            }
+            
+            resetTimetable()
+            
+            render([success: true, message: "Selected subjects deleted successfully"] as JSON)
+        } catch (Exception e) {
+            log.error("Error deleting multiple subjects", e)
+            render([success: false, message: "Error deleting subjects: ${e.message}"] as JSON)
+        }
     }
 
     private void generateLectureCards(String selectedClass) {
@@ -846,5 +864,326 @@ class TimetableController {
             }
         }
         return timetable
+    }
+
+    def downloadTimetable() {
+        try {
+            XSSFWorkbook workbook = new XSSFWorkbook()
+            
+            // Create a sheet for each class
+            CLASSES.each { className ->
+                XSSFSheet sheet = workbook.createSheet(className)
+                def timetableData = session.timetable[className]
+                
+                // Create header row with time slots
+                XSSFRow headerRow = sheet.createRow(0)
+                headerRow.createCell(0).setCellValue("Day/Time")
+                TIME_SLOTS.eachWithIndex { timeSlot, index ->
+                    headerRow.createCell(index + 1).setCellValue(timeSlot)
+                }
+                
+                // Add day rows
+                WEEK_DAYS.eachWithIndex { day, rowIndex ->
+                    XSSFRow row = sheet.createRow(rowIndex + 1)
+                    row.createCell(0).setCellValue(day)
+                    
+                    // Variable to track maximum lines in this row
+                    int maxLinesInRow = 1
+                    
+                    // Add time slot cells
+                    TIME_SLOTS.eachWithIndex { timeSlot, colIndex ->
+                        XSSFCell cell = row.createCell(colIndex + 1)
+                        def sessions = timetableData?[day]?[timeSlot] ?: []
+                        
+                        if (sessions) {
+                            StringBuilder cellContent = new StringBuilder()
+                            boolean firstSession = true
+                            
+                            sessions.each { session ->
+                                if (!firstSession) {
+                                    cellContent.append("\n----------------------------------------\n")
+                                }
+                                firstSession = false
+                                
+                                if (session.type in ['Lab', 'Tutorial']) {
+                                    cellContent.append("Batch ${session.batch ?: 'N/A'}\n")
+                                }
+                                
+                                cellContent.append("Subject: ${session.subject ?: 'N/A'}\n")
+                                cellContent.append("Teacher: ${session.teacher ?: 'N/A'}\n")
+                                cellContent.append("Room: ${session.room ?: 'TBD'}\n")
+                                cellContent.append("Type: ${session.type ?: 'N/A'}")
+                                
+                                if (session.type == 'Lab') {
+                                    cellContent.append(" (2 hours)")
+                                }
+                            }
+                            
+                            String content = cellContent.toString()
+                            cell.setCellValue(content)
+                            
+                            // Count number of lines in this cell
+                            int linesInCell = content.count("\n") + 1
+                            maxLinesInRow = Math.max(maxLinesInRow, linesInCell)
+                        } else {
+                            cell.setCellValue("-")
+                        }
+                    }
+                    
+                    // Set row height based on content (approximately 300 units per line)
+                    row.setHeight((short)(maxLinesInRow * 300))
+                }
+                
+                // Auto-size columns for width
+                (0..TIME_SLOTS.size()).each { sheet.autoSizeColumn(it) }
+                
+                // Header style
+                CellStyle headerStyle = workbook.createCellStyle()
+                headerStyle.setAlignment(HorizontalAlignment.CENTER)
+                headerStyle.setFillForegroundColor(IndexedColors.LIGHT_CORNFLOWER_BLUE.getIndex())
+                headerStyle.setFillPattern(FillPatternType.SOLID_FOREGROUND)
+                headerStyle.setWrapText(true)
+                
+                // Apply header style
+                XSSFRow header = sheet.getRow(0)
+                (0..TIME_SLOTS.size()).each { colIndex ->
+                    XSSFCell cell = header.getCell(colIndex)
+                    if (cell) {
+                        cell.setCellStyle(headerStyle)
+                    }
+                }
+                
+                // Day column style
+                CellStyle dayStyle = workbook.createCellStyle()
+                dayStyle.setAlignment(HorizontalAlignment.LEFT)
+                dayStyle.setFillForegroundColor(IndexedColors.LIGHT_YELLOW.getIndex())
+                dayStyle.setFillPattern(FillPatternType.SOLID_FOREGROUND)
+                dayStyle.setWrapText(true)
+                
+                // Apply day style
+                (1..WEEK_DAYS.size()).each { rowIndex ->
+                    XSSFCell cell = sheet.getRow(rowIndex).getCell(0)
+                    cell.setCellStyle(dayStyle)
+                }
+                
+                // Content style with increased font size
+                CellStyle contentStyle = workbook.createCellStyle()
+                contentStyle.setWrapText(true)
+                contentStyle.setVerticalAlignment(VerticalAlignment.TOP)
+                contentStyle.setAlignment(HorizontalAlignment.LEFT)
+                
+                Font contentFont = workbook.createFont()
+                contentFont.setFontHeightInPoints((short) 11) // Increased font size
+                contentStyle.setFont(contentFont)
+                
+                // Apply content style
+                (1..WEEK_DAYS.size()).each { rowIndex ->
+                    XSSFRow row = sheet.getRow(rowIndex)
+                    (1..TIME_SLOTS.size()).each { colIndex ->
+                        XSSFCell cell = row.getCell(colIndex)
+                        if (cell) {
+                            cell.setCellStyle(contentStyle)
+                        }
+                    }
+                }
+                
+                // Set a minimum width for all columns
+                (0..TIME_SLOTS.size()).each { colIndex ->
+                    int currentWidth = sheet.getColumnWidth(colIndex)
+                    if (currentWidth < 6000) { // Minimum width of 6000 units
+                        sheet.setColumnWidth(colIndex, 6000)
+                    }
+                }
+            }
+
+            // Set response headers and write to output
+            response.setContentType("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+            response.setHeader("Content-Disposition", "attachment; filename=timetable.xlsx")
+            workbook.write(response.outputStream)
+            response.outputStream.flush()
+            response.outputStream.close()
+            workbook.close()
+            
+        } catch (Exception e) {
+            log.error("Error generating timetable Excel file", e)
+            flash.message = "Error generating timetable: ${e.message}"
+            redirect(action: "index")
+        }
+    }
+
+    def downloadEntityTimetable() {
+        try {
+            def type = params.type
+            def value = params.value
+            def timetable
+            def fileName
+            
+            switch(type) {
+                case 'option1': // Class
+                    timetable = session.timetable[value] ?: [:]
+                    fileName = "Class_${value}_Timetable.xlsx"
+                    break
+                case 'option2': // Teacher
+                    timetable = fetchTimetableForTeacher(value)
+                    fileName = "Teacher_${value}_Timetable.xlsx"
+                    break
+                case 'option3': // Room
+                    timetable = fetchTimetableForRoom(value)
+                    fileName = "Room_${value}_Timetable.xlsx"
+                    break
+                default:
+                    throw new Exception("Invalid entity type")
+            }
+
+            XSSFWorkbook workbook = new XSSFWorkbook()
+            XSSFSheet sheet = workbook.createSheet("Timetable")
+            
+            // Create header row with time slots
+            XSSFRow headerRow = sheet.createRow(0)
+            headerRow.createCell(0).setCellValue("Day/Time")
+            TIME_SLOTS.eachWithIndex { timeSlot, index ->
+                headerRow.createCell(index + 1).setCellValue(timeSlot)
+            }
+            
+            // Add day rows
+            WEEK_DAYS.eachWithIndex { day, rowIndex ->
+                XSSFRow row = sheet.createRow(rowIndex + 1)
+                row.createCell(0).setCellValue(day)
+                
+                // Variable to track maximum lines in this row
+                int maxLinesInRow = 1
+                
+                // Add time slot cells
+                TIME_SLOTS.eachWithIndex { timeSlot, colIndex ->
+                    XSSFCell cell = row.createCell(colIndex + 1)
+                    def sessions = timetable[day]?[timeSlot] ?: []
+                    
+                    if (sessions) {
+                        StringBuilder cellContent = new StringBuilder()
+                        boolean firstSession = true
+                        
+                        sessions.each { session ->
+                            if (!firstSession) {
+                                cellContent.append("\n----------------------------------------\n")
+                            }
+                            firstSession = false
+                            
+                            // Add class info for teacher and room views
+                            if (type != 'option1') {
+                                cellContent.append("Class: ${session.class ?: 'N/A'}\n")
+                            }
+                            
+                            if (session.type in ['Lab', 'Tutorial']) {
+                                cellContent.append("Batch ${session.batch ?: 'N/A'}\n")
+                            }
+                            
+                            cellContent.append("Subject: ${session.subject ?: 'N/A'}\n")
+                            
+                            // Show teacher except in teacher view
+                            if (type != 'option2') {
+                                cellContent.append("Teacher: ${session.teacher ?: 'N/A'}\n")
+                            }
+                            
+                            // Show room except in room view
+                            if (type != 'option3') {
+                                cellContent.append("Room: ${session.room ?: 'TBD'}\n")
+                            }
+                            
+                            cellContent.append("Type: ${session.type ?: 'N/A'}")
+                            
+                            if (session.type == 'Lab') {
+                                cellContent.append(" (2 hours)")
+                            }
+                        }
+                        
+                        String content = cellContent.toString()
+                        cell.setCellValue(content)
+                        
+                        // Count number of lines in this cell
+                        int linesInCell = content.count("\n") + 1
+                        maxLinesInRow = Math.max(maxLinesInRow, linesInCell)
+                    } else {
+                        cell.setCellValue("-")
+                    }
+                }
+                
+                // Set row height based on content
+                row.setHeight((short)(maxLinesInRow * 300))
+            }
+            
+            // Style the sheet
+            // Header style
+            CellStyle headerStyle = workbook.createCellStyle()
+            headerStyle.setAlignment(HorizontalAlignment.CENTER)
+            headerStyle.setFillForegroundColor(IndexedColors.LIGHT_CORNFLOWER_BLUE.getIndex())
+            headerStyle.setFillPattern(FillPatternType.SOLID_FOREGROUND)
+            headerStyle.setWrapText(true)
+            
+            Font headerFont = workbook.createFont()
+            headerFont.setBold(true)
+            headerStyle.setFont(headerFont)
+            
+            // Apply header style
+            XSSFRow header = sheet.getRow(0)
+            (0..TIME_SLOTS.size()).each { colIndex ->
+                XSSFCell cell = header.getCell(colIndex)
+                if (cell) cell.setCellStyle(headerStyle)
+            }
+            
+            // Day column style
+            CellStyle dayStyle = workbook.createCellStyle()
+            dayStyle.setAlignment(HorizontalAlignment.LEFT)
+            dayStyle.setFillForegroundColor(IndexedColors.LIGHT_YELLOW.getIndex())
+            dayStyle.setFillPattern(FillPatternType.SOLID_FOREGROUND)
+            dayStyle.setWrapText(true)
+            dayStyle.setFont(headerFont)
+            
+            // Apply day style
+            (1..WEEK_DAYS.size()).each { rowIndex ->
+                XSSFCell cell = sheet.getRow(rowIndex).getCell(0)
+                cell.setCellStyle(dayStyle)
+            }
+            
+            // Content style
+            CellStyle contentStyle = workbook.createCellStyle()
+            contentStyle.setWrapText(true)
+            contentStyle.setVerticalAlignment(VerticalAlignment.TOP)
+            contentStyle.setAlignment(HorizontalAlignment.LEFT)
+            
+            Font contentFont = workbook.createFont()
+            contentFont.setFontHeightInPoints((short) 11)
+            contentStyle.setFont(contentFont)
+            
+            // Apply content style and set column widths
+            (1..WEEK_DAYS.size()).each { rowIndex ->
+                XSSFRow row = sheet.getRow(rowIndex)
+                (1..TIME_SLOTS.size()).each { colIndex ->
+                    XSSFCell cell = row.getCell(colIndex)
+                    if (cell) cell.setCellStyle(contentStyle)
+                }
+            }
+            
+            // Auto-size and set minimum width for all columns
+            (0..TIME_SLOTS.size()).each { colIndex ->
+                sheet.autoSizeColumn(colIndex)
+                int currentWidth = sheet.getColumnWidth(colIndex)
+                if (currentWidth < 6000) {
+                    sheet.setColumnWidth(colIndex, 6000)
+                }
+            }
+
+            // Set response headers and write to output
+            response.setContentType("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+            response.setHeader("Content-Disposition", "attachment; filename=${fileName}")
+            workbook.write(response.outputStream)
+            response.outputStream.flush()
+            response.outputStream.close()
+            workbook.close()
+            
+        } catch (Exception e) {
+            log.error("Error generating entity timetable Excel file", e)
+            flash.message = "Error generating timetable: ${e.message}"
+            redirect(action: "index", params: [currentStep: 3])
+        }
     }
 }    

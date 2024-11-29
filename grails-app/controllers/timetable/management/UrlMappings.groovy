@@ -15,6 +15,7 @@ class UrlMappings {
         "/timetable/index"(controller: 'timetable', action: 'index')
         "/timetable/addSubject"(controller: "timetable", action: "addSubject")
         "/timetable/deleteSubject"(controller: "timetable", action: "deleteSubject")
+        "/timetable/deleteMultipleSubjects"(controller: "timetable", action: "deleteMultipleSubjects")
         "/timetable/getRemainingLectures"(controller: "timetable", action: "getRemainingLectures")
         "/timetable/downloadTemplate"(controller: "timetable", action: "downloadTemplate")
         "/timetable/uploadSubjectMapping"(controller: "timetable", action: "uploadSubjectMapping")

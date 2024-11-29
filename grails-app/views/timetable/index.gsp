@@ -140,9 +140,21 @@
 
             <!-- Table to display subject details -->
             <h2>Subject Details</h2>
+
+            <div class="mb-3">
+                <button id="deleteSelectedBtn" class="btn btn-danger" style="display: none;">
+                    <i class="bi bi-trash3-fill"></i> Delete Selected
+                </button>
+            </div>
+
             <table class="table table-striped table-bordered table-hover shadow-sm p-3 mb-3 bg-white rounded">
                 <thead>
                     <tr>
+                        <th style="width: 40px">
+                            <div class="d-flex justify-content-center">
+                                <input type="checkbox" id="selectAll" class="form-check-input">
+                            </div>
+                        </th>
                         <th>Subject</th>
                         <th>Type</th>
                         <th>Teacher</th>
@@ -150,30 +162,42 @@
                         <th>Batch</th>
                         <th>Room Allocation</th>
                         <th>Lectures per Week</th>
-                        <th>Delete</th>
+                        <th style="width: 50px">Delete</th>
                     </tr>
                 </thead>
                 <tbody>
-                    <g:each in="${subjectDetails}" var="entry">
+                    <g:if test="${subjectDetails}">
+                        <g:each in="${subjectDetails}" var="entry">
+                            <tr>
+                                <td class="text-center">
+                                    <input type="checkbox" class="form-check-input subject-checkbox" data-key="${entry.key}">
+                                </td>
+                                <td>${entry.value.subject}</td>
+                                <td>${entry.value.type}</td>
+                                <td>${entry.value.teacher}</td>
+                                <td>${entry.value.class}</td>
+                                <td>
+                                    ${entry.value.batch != null ? 
+                                        (entry.value.batch instanceof Number ? 
+                                            entry.value.batch.intValue() : 
+                                            (entry.value.batch.toString().isNumber() ? 
+                                                entry.value.batch.toString().toFloat().intValue() : 
+                                                entry.value.batch)
+                                        ) : 'N/A'}
+                                </td>
+                                <td>${entry.value.roomAllocation == 'automatic' ? 'Automatic' : entry.value.manualRoom}</td>
+                                <td>${entry.value.lecturesPerWeek}</td>
+                                <td class="text-center">
+                                    <i class="bi bi-trash3-fill" onClick="deleteSubject('${entry.key}')"></i>
+                                </td>
+                            </tr>
+                        </g:each>
+                    </g:if>
+                    <g:else>
                         <tr>
-                            <td>${entry.value.subject}</td>
-                            <td>${entry.value.type}</td>
-                            <td>${entry.value.teacher}</td>
-                            <td>${entry.value.class}</td>
-                            <td>
-                                ${entry.value.batch != null ? 
-                                    (entry.value.batch instanceof Number ? 
-                                        entry.value.batch.intValue() : 
-                                        (entry.value.batch.toString().isNumber() ? 
-                                            entry.value.batch.toString().toFloat().intValue() : 
-                                            entry.value.batch)
-                                    ) : 'N/A'}
-                            </td>
-                            <td>${entry.value.roomAllocation == 'automatic' ? 'Automatic' : entry.value.manualRoom}</td>
-                            <td>${entry.value.lecturesPerWeek}</td>
-                            <td><i class="bi bi-trash3-fill" onClick="deleteSubject('${entry.key}')"></i></td>
+                            <td colspan="9" class="text-center">No subject mappings found</td>
                         </tr>
-                    </g:each>
+                    </g:else>
                 </tbody>
             </table>
         </div>
@@ -315,6 +339,11 @@
                     <tbody>
                     </tbody>
                 </table>
+                <div class="mt-3">
+                    <button id="downloadEntityTimetable" class="btn btn-primary" style="display: none;">
+                        <i class="bi bi-download"></i> Download Current View
+                    </button>
+                </div>
             </div>
         </div>
 
@@ -427,7 +456,64 @@
                 }
             });
 
-            // Initialize lecture cards with colors
+            // Select All checkbox functionality
+            $('#selectAll').change(function() {
+                $('.subject-checkbox').prop('checked', $(this).is(':checked'));
+                updateDeleteButtonVisibility();
+            });
+
+            // Individual checkbox change handler
+            $(document).on('change', '.subject-checkbox', function() {
+                updateDeleteButtonVisibility();
+                
+                // Update "Select All" checkbox
+                var allChecked = $('.subject-checkbox:checked').length === $('.subject-checkbox').length;
+                $('#selectAll').prop('checked', allChecked);
+            });
+
+            // Function to show/hide delete button
+            function updateDeleteButtonVisibility() {
+                var checkedCount = $('.subject-checkbox:checked').length;
+                $('#deleteSelectedBtn').toggle(checkedCount > 0);
+            }
+
+            // Delete selected subjects
+            $('#deleteSelectedBtn').click(function() {
+                var selectedKeys = $('.subject-checkbox:checked').map(function() {
+                    return $(this).data('key');
+                }).get();
+
+                if (selectedKeys.length === 0) {
+                    alert('Please select at least one subject to delete');
+                    return;
+                }
+
+                if (confirm('Are you sure you want to delete ' + selectedKeys.length + ' selected subjects?')) {
+                    deleteSelectedSubjects(selectedKeys);
+                }
+            });
+
+            // Function to delete multiple subjects
+            function deleteSelectedSubjects(keys) {
+                $.ajax({
+                    url: '${createLink(controller: 'timetable', action: 'deleteMultipleSubjects')}',
+                    method: 'POST',
+                    contentType: 'application/json',
+                    data: JSON.stringify({ keys: keys }),
+                    success: function(response) {
+                        if (response.success) {
+                            location.reload();
+                        } else {
+                            alert('Error: ' + (response.message || 'Failed to delete subjects'));
+                        }
+                    },
+                    error: function() {
+                        alert('Error deleting subjects');
+                    }
+                });
+            }
+
+            // Initialize lecture cards
             updateLectureCardsView(${raw((lectureCards as JSON).toString())});
 
             $('#displayButton').click(function() {
@@ -540,6 +626,19 @@
                 $.each(options, function(index, value) {
                     $('#dropdown2').append('<option value="' + value + '">' + value + '</option>');
                 });
+            });
+
+            // Show download button when timetable is displayed
+            $('#displayButton').click(function() {
+                $('#downloadEntityTimetable').show();
+            });
+
+            $('#downloadEntityTimetable').click(function() {
+                var entityType = $('#dropdown1').val();
+                var entityValue = $('#dropdown2').val();
+                
+                window.location.href = '${createLink(controller: "timetable", action: "downloadEntityTimetable")}' +
+                    '?type=' + entityType + '&value=' + encodeURIComponent(entityValue);
             });
 
             // Class filter change handler
