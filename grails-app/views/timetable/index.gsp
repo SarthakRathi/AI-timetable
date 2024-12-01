@@ -18,6 +18,11 @@
         .lecture-card.selected {
             background-color: #e9ecef;
         }
+        .lecture-card.disabled {
+            opacity: 0.5;
+            background-color: #f8f9fa;
+            cursor: not-allowed;
+        }
         .timetable-cell {
             font-size: 12px; /* Smaller text size */
         }
@@ -39,6 +44,28 @@
             background-color: #007bff;
             color: white;
         }
+        .timetable-cell.invalid-drop {
+            background-color: #ffebee !important;
+            transition: background-color 0.3s;
+        }
+
+        .timetable-cell.valid-drop {
+            background-color: #e8f5e9 !important;
+            transition: background-color 0.3s;
+        }
+        .accordion-button:not(.collapsed) {
+            background-color: #e7f1ff;
+            color: #0c63e4;
+        }
+
+        .accordion-button:focus {
+            box-shadow: none;
+            border-color: rgba(0,0,0,.125);
+        }
+
+        .accordion-item {
+            margin-bottom: 1rem;
+        }
     </style>
 </head>
 <body>
@@ -48,8 +75,9 @@
         <!-- Horizontal Stepper -->
         <div class="d-flex justify-content-between mb-4">
             <div class="stepper-item active" data-step="1">Step 1: Subject Mapping</div>
-            <div class="stepper-item" data-step="2">Step 2: Timetable Generation</div>
-            <div class="stepper-item" data-step="3">Step 3: Timetable Summary</div>
+            <div class="stepper-item" data-step="2">Step 2: Constraints</div>
+            <div class="stepper-item" data-step="3">Step 3: Timetable Generation</div>
+            <div class="stepper-item" data-step="4">Step 4: Timetable Summary</div>
         </div>
 
         <!-- Step 1: Subject Mapping -->
@@ -202,8 +230,197 @@
             </table>
         </div>
 
-        <!-- Step 2: Timetable Generation -->
+        <!-- Step 2: Constraints -->
         <div class="step-content" id="step2">
+            <div class="accordion" id="constraintsAccordion">
+                <!-- Teacher Constraints Accordion -->
+                <div class="accordion-item">
+                    <h2 class="accordion-header">
+                        <button class="accordion-button" type="button" data-bs-toggle="collapse" 
+                                data-bs-target="#teacherConstraints" aria-expanded="true" 
+                                aria-controls="teacherConstraints">
+                            Teacher Constraints
+                        </button>
+                    </h2>
+                    <div id="teacherConstraints" class="accordion-collapse collapse show" 
+                        data-bs-parent="#constraintsAccordion">
+                        <div class="accordion-body">
+                            <div class="mb-4">
+                                <label for="constraintTeacher" class="form-label">Select Teacher:</label>
+                                <select id="constraintTeacher" class="form-select">
+                                    <g:each in="${teachers}" var="teacher">
+                                        <option value="${teacher}">${teacher}</option>
+                                    </g:each>
+                                </select>
+                            </div>
+
+                            <!-- Time Slots Selection for Teachers -->
+                            <div class="mb-4">
+                                <h4>Available Time Slots</h4>
+                                <div class="table-responsive">
+                                    <div class="mb-3">
+                                        <button type="button" class="btn btn-danger" id="clearAllTeacherSlots">Clear All</button>
+                                        <button type="button" class="btn btn-success ms-2" id="selectAllTeacherSlots">Select All</button>
+                                    </div>
+                                    <table class="table table-bordered">
+                                        <thead>
+                                            <tr>
+                                                <th>Time Slot</th>
+                                                <g:each in="${allDays}" var="day">
+                                                    <th>${day}</th>
+                                                </g:each>
+                                                <th>Select All</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            <g:each in="${timeSlots}" var="slot">
+                                                <tr>
+                                                    <td>${slot}</td>
+                                                    <g:each in="${allDays}" var="day">
+                                                        <td>
+                                                            <div class="form-check d-flex justify-content-center">
+                                                                <input class="form-check-input teacher-time-slot" 
+                                                                    type="checkbox" 
+                                                                    data-day="${day}" 
+                                                                    data-slot="${slot}"
+                                                                    checked>
+                                                            </div>
+                                                        </td>
+                                                    </g:each>
+                                                    <td>
+                                                        <div class="form-check d-flex justify-content-center">
+                                                            <input class="form-check-input teacher-select-row" 
+                                                                type="checkbox" 
+                                                                data-slot="${slot}"
+                                                                checked>
+                                                        </div>
+                                                    </td>
+                                                </tr>
+                                            </g:each>
+                                        </tbody>
+                                        <tfoot>
+                                            <tr>
+                                                <td>Select All</td>
+                                                <g:each in="${allDays}" var="day">
+                                                    <td>
+                                                        <div class="form-check d-flex justify-content-center">
+                                                            <input class="form-check-input teacher-select-column" 
+                                                                type="checkbox" 
+                                                                data-day="${day}"
+                                                                checked>
+                                                        </div>
+                                                    </td>
+                                                </g:each>
+                                                <td></td>
+                                            </tr>
+                                        </tfoot>
+                                    </table>
+                                </div>
+                            </div>
+
+                            <div class="text-center">
+                                <button id="saveTeacherConstraints" class="btn btn-primary">Save Teacher Constraints</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Class Constraints Accordion -->
+                <div class="accordion-item">
+                    <h2 class="accordion-header">
+                        <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" 
+                                data-bs-target="#classConstraints" aria-expanded="false" 
+                                aria-controls="classConstraints">
+                            Class Constraints
+                        </button>
+                    </h2>
+                    <div id="classConstraints" class="accordion-collapse collapse" 
+                        data-bs-parent="#constraintsAccordion">
+                        <div class="accordion-body">
+                            <div class="mb-4">
+                                <label for="constraintClass" class="form-label">Select Class:</label>
+                                <select id="constraintClass" class="form-select">
+                                    <g:each in="${classes}" var="classOption">
+                                        <option value="${classOption}">${classOption}</option>
+                                    </g:each>
+                                </select>
+                            </div>
+
+                            <!-- Time Slots Selection for Classes -->
+                            <div class="mb-4">
+                                <h4>Available Time Slots</h4>
+                                <div class="table-responsive">
+                                    <div class="mb-3">
+                                        <button type="button" class="btn btn-danger" id="clearAllClassSlots">Clear All</button>
+                                        <button type="button" class="btn btn-success ms-2" id="selectAllClassSlots">Select All</button>
+                                    </div>
+                                    <table class="table table-bordered">
+                                        <thead>
+                                            <tr>
+                                                <th>Time Slot</th>
+                                                <g:each in="${allDays}" var="day">
+                                                    <th>${day}</th>
+                                                </g:each>
+                                                <th>Select All</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            <g:each in="${timeSlots}" var="slot">
+                                                <tr>
+                                                    <td>${slot}</td>
+                                                    <g:each in="${allDays}" var="day">
+                                                        <td>
+                                                            <div class="form-check d-flex justify-content-center">
+                                                                <input class="form-check-input class-time-slot" 
+                                                                    type="checkbox" 
+                                                                    data-day="${day}" 
+                                                                    data-slot="${slot}"
+                                                                    checked>
+                                                            </div>
+                                                        </td>
+                                                    </g:each>
+                                                    <td>
+                                                        <div class="form-check d-flex justify-content-center">
+                                                            <input class="form-check-input class-select-row" 
+                                                                type="checkbox" 
+                                                                data-slot="${slot}"
+                                                                checked>
+                                                        </div>
+                                                    </td>
+                                                </tr>
+                                            </g:each>
+                                        </tbody>
+                                        <tfoot>
+                                            <tr>
+                                                <td>Select All</td>
+                                                <g:each in="${allDays}" var="day">
+                                                    <td>
+                                                        <div class="form-check d-flex justify-content-center">
+                                                            <input class="form-check-input class-select-column" 
+                                                                type="checkbox" 
+                                                                data-day="${day}"
+                                                                checked>
+                                                        </div>
+                                                    </td>
+                                                </g:each>
+                                                <td></td>
+                                            </tr>
+                                        </tfoot>
+                                    </table>
+                                </div>
+                            </div>
+
+                            <div class="text-center">
+                                <button id="saveClassConstraints" class="btn btn-primary">Save Class Constraints</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Step 3: Timetable Generation -->
+        <div class="step-content" id="step3">
             <!-- Class filter dropdown -->
             <form id="filterForm" action="${createLink(controller: 'timetable', action: 'index')}" method="GET" class="mb-3">
                 <div class="row align-items-center">
@@ -298,8 +515,8 @@
             </div>
         </div>
 
-        <!-- Step 3: Timetable Summary -->
-        <div id="step3" class="step-content">
+        <!-- Step 4: Timetable Summary -->
+        <div id="step4" class="step-content">
             <h3>Manage Timetables</h3>
             <div class="row mb-4">
                 <!-- First Dropdown -->
@@ -354,6 +571,7 @@
         </div>
     </div>
 
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
     <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
     <script>
 
@@ -388,7 +606,7 @@
 
         $(document).ready(function() {
             let currentStep = ${params.currentStep ? params.int('currentStep') : 1};
-            const totalSteps = 3;
+            const totalSteps = 4;
 
             function updateStepperDisplay() {
                 $('.stepper-item').removeClass('active');
@@ -435,6 +653,313 @@
                     updateStepperDisplay();
                 }
             });
+
+            if ($('#constraintTeacher option').length > 0) {
+                $('#constraintTeacher').prop('selectedIndex', 0).trigger('change');
+            }
+
+            $('#clearAllSlots').click(function() {
+                $('.time-slot, .select-row, .select-column').prop('checked', false);
+            });
+
+            // Select all slots
+            $('#selectAllSlots').click(function() {
+                $('.time-slot, .select-row, .select-column').prop('checked', true);
+            });
+
+            // Handle row selection (time slot)
+            $('.select-row').change(function() {
+                const slot = $(this).data('slot');
+                const isChecked = $(this).is(':checked');
+                $('.time-slot[data-slot="' + slot + '"]').prop('checked', isChecked);
+                updateColumnCheckboxes();
+            });
+
+            // Handle column selection (day)
+            $('.select-column').change(function() {
+                const day = $(this).data('day');
+                const isChecked = $(this).is(':checked');
+                $('.time-slot[data-day="' + day + '"]').prop('checked', isChecked);
+                updateRowCheckboxes();
+            });
+
+            // Update row checkboxes based on time slots
+            function updateRowCheckboxes() {
+                $('.select-row').each(function() {
+                    const slot = $(this).data('slot');
+                    const allChecked = $('.time-slot[data-slot="' + slot + '"]').length === 
+                                    $('.time-slot[data-slot="' + slot + '"]:checked').length;
+                    $(this).prop('checked', allChecked);
+                });
+            }
+
+            // Update column checkboxes based on time slots
+            function updateColumnCheckboxes() {
+                $('.select-column').each(function() {
+                    const day = $(this).data('day');
+                    const allChecked = $('.time-slot[data-day="' + day + '"]').length === 
+                                    $('.time-slot[data-day="' + day + '"]:checked').length;
+                    $(this).prop('checked', allChecked);
+                });
+            }
+
+            // Update checkboxes when individual time slots are clicked
+            $('.time-slot').change(function() {
+                updateRowCheckboxes();
+                updateColumnCheckboxes();
+            });
+
+            $('#constraintTeacher').change(function() {
+                const teacher = $(this).val();
+                if (teacher) {
+                    loadTeacherConstraints(teacher);
+                } else {
+                    resetConstraintForm();
+                }
+            });
+            
+            function loadTeacherConstraints(teacher) {
+                $.ajax({
+                    url: '${createLink(controller: "timetable", action: "getTeacherConstraints")}',
+                    data: { teacher: teacher },
+                    success: function(response) {
+                        if (response.success) {
+                            console.log("Loading constraints for", teacher, response); // Debug log
+                            // Set time slots
+                            $('.time-slot').each(function() {
+                                const day = $(this).data('day');
+                                const slot = $(this).data('slot');
+                                const isChecked = response.availableSlots[day]?.includes(slot) || false;
+                                $(this).prop('checked', isChecked);
+                            });
+                            
+                            // Update row and column selectors
+                            updateRowCheckboxes();
+                            updateColumnCheckboxes();
+                        } else {
+                            console.error("Error loading constraints:", response.message);
+                            alert('Error loading constraints: ' + response.message);
+                        }
+                    },
+                    error: function(xhr, status, error) {
+                        console.error("AJAX error:", error);
+                        alert('Error loading constraints: ' + error);
+                    }
+                });
+            }
+            
+            $('#saveConstraints').click(function() {
+                const teacher = $('#constraintTeacher').val();
+                if (!teacher) {
+                    alert('Please select a teacher');
+                    return;
+                }
+                
+                // Collect available slots
+                const availableSlots = {};
+                const workingDays = new Set();
+                
+                data.weekDays.forEach(day => {
+                    availableSlots[day] = [];
+                    
+                    // Get all checked slots for this day
+                    $('.time-slot[data-day="' + day + '"]:checked').each(function() {
+                        const slot = $(this).data('slot');
+                        availableSlots[day].push(slot);
+                        if (slot) {
+                            workingDays.add(day);
+                        }
+                    });
+                });
+                
+                console.log("Saving constraints for", teacher, {
+                    workingDays: Array.from(workingDays),
+                    availableSlots: availableSlots
+                }); // Debug log
+                
+                // Save constraints
+                $.ajax({
+                    url: '${createLink(controller: "timetable", action: "saveTeacherConstraints")}',
+                    method: 'POST',
+                    contentType: 'application/json',
+                    data: JSON.stringify({
+                        teacher: teacher,
+                        workingDays: Array.from(workingDays),
+                        availableSlots: availableSlots
+                    }),
+                    success: function(response) {
+                        if (response.success) {
+                            alert('Constraints saved successfully');
+                        } else {
+                            console.error("Error saving constraints:", response.message);
+                            alert('Error saving constraints: ' + response.message);
+                        }
+                    },
+                    error: function(xhr, status, error) {
+                        console.error("AJAX error:", error);
+                        alert('Error saving constraints: ' + error);
+                    }
+                });
+            });
+            
+            function resetConstraintForm() {
+                $('.working-day, .time-slot').prop('checked', false);
+            }
+
+            $('#clearAllClassSlots').click(function() {
+                $('.class-time-slot, .class-select-row, .class-select-column').prop('checked', false);
+            });
+
+            // Select all class slots
+            $('#selectAllClassSlots').click(function() {
+                $('.class-time-slot, .class-select-row, .class-select-column').prop('checked', true);
+            });
+
+            // Handle row selection for class
+            $('.class-select-row').change(function() {
+                const slot = $(this).data('slot');
+                const isChecked = $(this).is(':checked');
+                $('.class-time-slot[data-slot="' + slot + '"]').prop('checked', isChecked);
+                updateClassColumnCheckboxes();
+            });
+
+            // Handle column selection for class
+            $('.class-select-column').change(function() {
+                const day = $(this).data('day');
+                const isChecked = $(this).is(':checked');
+                $('.class-time-slot[data-day="' + day + '"]').prop('checked', isChecked);
+                updateClassRowCheckboxes();
+            });
+
+            // Update row checkboxes for class
+            function updateClassRowCheckboxes() {
+                $('.class-select-row').each(function() {
+                    const slot = $(this).data('slot');
+                    const allChecked = $('.class-time-slot[data-slot="' + slot + '"]').length === 
+                                    $('.class-time-slot[data-slot="' + slot + '"]:checked').length;
+                    $(this).prop('checked', allChecked);
+                });
+            }
+
+            // Update column checkboxes for class
+            function updateClassColumnCheckboxes() {
+                $('.class-select-column').each(function() {
+                    const day = $(this).data('day');
+                    const allChecked = $('.class-time-slot[data-day="' + day + '"]').length === 
+                                    $('.class-time-slot[data-day="' + day + '"]:checked').length;
+                    $(this).prop('checked', allChecked);
+                });
+            }
+
+            // Update checkboxes when individual class time slots are clicked
+            $('.class-time-slot').change(function() {
+                updateClassRowCheckboxes();
+                updateClassColumnCheckboxes();
+            });
+
+            $('#constraintClass').change(function() {
+                const classGroup = $(this).val();
+                if (classGroup) {
+                    loadClassConstraints(classGroup);
+                } else {
+                    resetClassConstraintForm();
+                }
+            });
+
+            function loadClassConstraints(classGroup) {
+                $.ajax({
+                    url: '${createLink(controller: "timetable", action: "getClassConstraints")}',
+                    data: { classGroup: classGroup },
+                    success: function(response) {
+                        if (response.success) {
+                            console.log("Loading constraints for class", classGroup, response);
+                            // Set time slots
+                            $('.class-time-slot').each(function() {
+                                const day = $(this).data('day');
+                                const slot = $(this).data('slot');
+                                const isChecked = response.availableSlots[day]?.includes(slot) || false;
+                                $(this).prop('checked', isChecked);
+                            });
+                            
+                            // Update row and column selectors
+                            updateClassRowCheckboxes();
+                            updateClassColumnCheckboxes();
+                        } else {
+                            console.error("Error loading class constraints:", response.message);
+                            alert('Error loading class constraints: ' + response.message);
+                        }
+                    },
+                    error: function(xhr, status, error) {
+                        console.error("AJAX error:", error);
+                        alert('Error loading class constraints: ' + error);
+                    }
+                });
+            }
+
+            $('#saveClassConstraints').click(function() {
+                const classGroup = $('#constraintClass').val();
+                if (!classGroup) {
+                    alert('Please select a class');
+                    return;
+                }
+                
+                // Collect available slots
+                const availableSlots = {};
+                const workingDays = new Set();
+                
+                data.weekDays.forEach(day => {
+                    availableSlots[day] = [];
+                    
+                    // Get all checked slots for this day
+                    $('.class-time-slot[data-day="' + day + '"]:checked').each(function() {
+                        const slot = $(this).data('slot');
+                        availableSlots[day].push(slot);
+                        if (slot) {
+                            workingDays.add(day);
+                        }
+                    });
+                });
+                
+                console.log("Saving constraints for class", classGroup, {
+                    workingDays: Array.from(workingDays),
+                    availableSlots: availableSlots
+                });
+                
+                // Save constraints
+                $.ajax({
+                    url: '${createLink(controller: "timetable", action: "saveClassConstraints")}',
+                    method: 'POST',
+                    contentType: 'application/json',
+                    data: JSON.stringify({
+                        classGroup: classGroup,
+                        workingDays: Array.from(workingDays),
+                        availableSlots: availableSlots
+                    }),
+                    success: function(response) {
+                        if (response.success) {
+                            alert('Class constraints saved successfully');
+                        } else {
+                            console.error("Error saving class constraints:", response.message);
+                            alert('Error saving class constraints: ' + response.message);
+                        }
+                    },
+                    error: function(xhr, status, error) {
+                        console.error("AJAX error:", error);
+                        alert('Error saving class constraints: ' + error);
+                    }
+                });
+            });
+
+            function resetClassConstraintForm() {
+                $('.class-time-slot').prop('checked', true);
+                updateClassRowCheckboxes();
+                updateClassColumnCheckboxes();
+            }
+
+            // Initialize first class's constraints
+            if ($('#constraintClass option').length > 0) {
+                $('#constraintClass').prop('selectedIndex', 0).trigger('change');
+            }
 
             $('#type').change(function() {
                 if ($(this).val() === 'Lab' || $(this).val() === 'Tutorial') {
@@ -671,25 +1196,12 @@
             });
 
             function assignLecture(lectureId, day, time) {
-                console.log("Assigning lecture:", lectureId, day, time);
-
-                if (!lectureId || !day || !time) {
-                    alert("Error: Missing lecture information. Please try again.");
-                    return;
-                }
-
-                var selectedClass = '${selectedClass}';
-                if (!selectedClass) {
-                    alert("Error: No class selected. Please select a class and try again.");
-                    return;
-                }
-
                 $.ajax({
                     url: '${createLink(controller: 'timetable', action: 'assignLecture')}',
                     method: 'POST',
                     contentType: 'application/json',
                     data: JSON.stringify({
-                        selectedClass: selectedClass,
+                        selectedClass: $('#selectedClass').val(),
                         lectureId: lectureId,
                         day: day,
                         time: time
@@ -700,18 +1212,19 @@
                             if (response.lecture.type === 'Lab' && response.nextSlot) {
                                 updateTimetableCell(day, response.nextSlot, response.lecture);
                             }
-                            updateLectureCardCount(lectureId);
+                            updateLectureCardCount(lectureId, response.remainingCount);
                         } else {
-                            alert('Error assigning lecture: ' + response.message);
+                            // Show a more user-friendly alert for constraint violations
+                            let errorMessage = response.message;
+                            if (errorMessage.includes('not available')) {
+                                errorMessage = `Cannot assign lecture:\n${errorMessage}\n\nPlease check teacher availability constraints.`;
+                            }
+                            alert(errorMessage);
                         }
                     },
                     error: function(jqXHR, textStatus, errorThrown) {
                         console.error("AJAX error:", jqXHR, textStatus, errorThrown);
-                        var errorMessage = 'Error assigning lecture: ' + errorThrown + 
-                                        '\nStatus: ' + jqXHR.status + 
-                                        '\nResponse: ' + jqXHR.responseText;
-                        console.error(errorMessage);
-                        alert(errorMessage);
+                        alert('Failed to assign lecture. Error: ' + errorThrown);
                     }
                 });
             }
@@ -724,15 +1237,23 @@
                     data: { selectedClass: $('#selectedClass').val() },
                     success: function(response) {
                         if (response.success) {
+                            if (response.lectureCards) {
+                                updateLectureCardsView(response.lectureCards);
+                            }
                             updateTimetableView(response.timetable);
-                            updateLectureCardsView(response.lectureCards);
+                            
+                            if (response.warnings) {
+                                let warningMessage = response.warnings.join('\n');
+                                alert('Timetable generated with following warnings:\n\n' + warningMessage);
+                            }
                         } else {
                             alert('Error generating timetable: ' + (response.message || 'Unknown error'));
                         }
                     },
                     error: function(jqXHR, textStatus, errorThrown) {
                         console.error("AJAX error:", jqXHR, textStatus, errorThrown);
-                        alert('Failed to generate timetable. Server responded with status: ' + jqXHR.status + '\nError: ' + errorThrown);
+                        alert('Failed to generate timetable. Server responded with status: ' + 
+                            jqXHR.status + '\nError: ' + errorThrown);
                     }
                 });
             });
@@ -763,9 +1284,15 @@
 
             function updateLectureCardsView(lectureCards) {
                 $('#lectureCards').empty();
+                if (!lectureCards || lectureCards.length === 0) {
+                    console.warn("No lecture cards to display");
+                    return;
+                }
+                
                 lectureCards.forEach(function(card) {
+                    var isDisabled = card.count <= 0;
                     var cardHtml = '<div class="col-md-3 mb-2">' +
-                        '<div class="lecture-card shadow p-3 rounded" data-id="' + card.id + '">' +
+                        '<div class="lecture-card shadow p-3 rounded' + (isDisabled ? ' disabled' : '') + '" data-id="' + card.id + '">' +
                         '<h6>' + card.subject + ' (' + card.type + ')</h6>' +
                         '<h6>Teacher: ' + card.teacher + '</h6>';
                     
@@ -812,28 +1339,38 @@
                 }
             }
 
-            function updateLectureCardCount(lectureId) {
+            function updateLectureCardCount(lectureId, remainingCount) {
                 let card = $('.lecture-card[data-id="' + lectureId + '"]');
                 let countSpan = card.find('.lecture-count');
-                let currentCount = parseInt(countSpan.text());
-                if (currentCount > 0) {
-                    countSpan.text(currentCount - 1);
-                    if (currentCount - 1 === 0) {
-                        card.removeClass('selected');
-                        selectedLectureCard = null;
-                    }
+                countSpan.text(remainingCount);
+                
+                // Disable card if no remaining lectures
+                if (remainingCount <= 0) {
+                    card.addClass('disabled');
+                    card.draggable('disable');  // If using jQuery UI draggable
                 }
             }
 
             $('form[action$="/resetTimetable"]').submit(function(e) {
                 e.preventDefault();
+                var currentStep = $('#currentStepInput').val();
+                var selectedClass = $('#selectedClass').val();
+                
                 $.ajax({
                     url: this.action,
                     method: 'POST',
-                    data: $(this).serialize(),
+                    data: {
+                        currentStep: currentStep,
+                        selectedClass: selectedClass
+                    },
                     success: function(response) {
-                        // Reload the page to reflect the changes
-                        window.location.reload();
+                        if (response.success) {
+                            // Reload the page with the same step and class
+                            window.location.href = '${createLink(controller: "timetable", action: "index")}' +
+                                '?currentStep=' + currentStep + '&selectedClass=' + selectedClass;
+                        } else {
+                            alert('Error resetting timetable: ' + response.message);
+                        }
                     },
                     error: function(jqXHR, textStatus, errorThrown) {
                         console.error("AJAX error:", jqXHR, textStatus, errorThrown);

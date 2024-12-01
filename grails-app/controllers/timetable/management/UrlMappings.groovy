@@ -22,6 +22,8 @@ class UrlMappings {
         "/timetable/assignLecture"(controller: "timetable", action: "assignLecture")
         "/timetable/generateTimetable"(controller: "timetable", action: "generateTimetable")
         "/timetable/resetTimetable"(controller: "timetable", action: "resetTimetable")
+        "/timetable/saveTeacherConstraints"(controller: "timetable", action: "saveTeacherConstraints")
+        "/timetable/getTeacherConstraints"(controller: "timetable", action: "getTeacherConstraints")
 
         // Set the timetable index as the main page
         "/"(controller: "timetable", action: "index")

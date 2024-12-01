@@ -22,8 +22,9 @@ class TimetableController {
     private static final List<String> LABROOMS = ['Lab1', 'Lab2', 'Lab3']
     private static final List<String> TUTORIALROOMS = ['Tutorial1', 'Tutorial2', 'Tutorial3']
     private static final List<String> TEACHERS = ['Nilesh Sable', 'Chandrakant Banchhor', 'Anuradha Yenkikar', 'Pradnya Mehta', 'Amol Patil', 'Pranjal Pandit', 'Vidya Gaikwad']
-    private static final List<String> WEEK_DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday']
+    private static final List<String> WEEK_DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
     private static final List<String> TIME_SLOTS = ['8:00', '09:00', '10:00', '11:00', '12:00', '1:00', '2:00', '3:00', '4:00', '5:00']
+    
     
     def index() {
         def selectedClass = params.selectedClass ?: CLASSES[0]
@@ -32,6 +33,10 @@ class TimetableController {
         // Initialize session.timetable if it doesn't exist
         if (!session.timetable) {
             session.timetable = [:]
+        }
+
+        if (!session.teacherConstraints) {
+            session.teacherConstraints = [:]
         }
 
         // Ensure all days and slots are initialized for the selected class
@@ -72,7 +77,8 @@ class TimetableController {
             labs: LABROOMS.collect { it.encodeAsJSON() },
             classrooms: CLASSROOMS.collect { it.encodeAsJSON() },
             tutorialRooms: TUTORIALROOMS.collect { it.encodeAsJSON() },
-            allRooms: (CLASSROOMS + LABROOMS + TUTORIALROOMS).collect { it.encodeAsJSON() }
+            allRooms: (CLASSROOMS + LABROOMS + TUTORIALROOMS).collect { it.encodeAsJSON() },
+            allDays: WEEK_DAYS
         ]
     }
 
@@ -100,6 +106,9 @@ class TimetableController {
         if (!session.lectureCards) {
             session.lectureCards = [:]
         }
+        if (!session.originalLectureCards) {
+            session.originalLectureCards = [:]  // Store original counts
+        }
         session.lectureCards[selectedClass] = []
 
         if (!session.timetable) {
@@ -112,43 +121,72 @@ class TimetableController {
         def existingTimetable = session.timetable[selectedClass]
         
         filterSubjectDetailsByClass(selectedClass).each { key, details ->
+            // Get the total assigned lectures for this subject
             int assignedLectures = 0
             existingTimetable.each { day, slots ->
                 slots.each { time, slotList ->
                     assignedLectures += slotList.count { it.subject == details.subject && it.batch == details.batch }
                 }
             }
-            def remainingLectures = details.lecturesPerWeek - assignedLectures
             
-            if (remainingLectures > 0) {
-                def cardBase = [
-                    subject: details.subject,
-                    teacher: details.teacher,
-                    count: remainingLectures,
-                    type: details.type,
-                    roomAllocation: details.roomAllocation,
-                    manualRoom: details.manualRoom
+            def totalLectures = details.lecturesPerWeek
+            def remainingLectures = totalLectures - assignedLectures
+            
+            // Create cards regardless of remaining lectures
+            def cardBase = [
+                subject: details.subject,
+                teacher: details.teacher,
+                totalLectures: totalLectures,  // Store total lectures
+                count: remainingLectures,
+                type: details.type,
+                roomAllocation: details.roomAllocation,
+                manualRoom: details.manualRoom
+            ]
+            
+            if (details.type == "Lecture") {
+                def card = cardBase + [
+                    id: "${details.subject}_${details.class}_${details.type}".toString()
                 ]
-                
-                if (details.type == "Lecture") {
-                    session.lectureCards[selectedClass] << cardBase + [
-                        id: "${details.subject}_${details.class}_${details.type}".toString()
+                session.lectureCards[selectedClass] << card
+                // Store original state
+                if (!session.originalLectureCards[selectedClass]) {
+                    session.originalLectureCards[selectedClass] = []
+                }
+                session.originalLectureCards[selectedClass] << card.clone()
+            } else {
+                // For Labs and Tutorials, create separate cards for each batch
+                def batches = details.batch ? [details.batch] : ['1', '2', '3']
+                batches.each { batchNumber ->
+                    def card = cardBase + [
+                        id: "${details.subject}_${details.class}_${details.type}_Batch${batchNumber}".toString(),
+                        batch: batchNumber
                     ]
-                } else {
-                    // For Labs and Tutorials, create separate cards for each batch
-                    def batches = details.batch ? [details.batch] : ['1', '2', '3']
-                    batches.each { batchNumber ->
-                        session.lectureCards[selectedClass] << cardBase + [
-                            id: "${details.subject}_${details.class}_${details.type}_Batch${batchNumber}".toString(),
-                            batch: batchNumber
-                        ]
+                    session.lectureCards[selectedClass] << card
+                    // Store original state
+                    if (!session.originalLectureCards[selectedClass]) {
+                        session.originalLectureCards[selectedClass] = []
                     }
+                    session.originalLectureCards[selectedClass] << card.clone()
                 }
             }
         }
     }
 
     def resetTimetable() {
+        def selectedClass = params.selectedClass ?: CLASSES[0]
+
+        // Clear only the timetable entries but keep track of assignments
+        def assignedLectures = [:]
+        session.timetable?.each { classGroup, classTimetable ->
+            assignedLectures[classGroup] = []
+            classTimetable.each { day, daySlots ->
+                daySlots.each { time, slots ->
+                    assignedLectures[classGroup].addAll(slots)
+                }
+            }
+        }
+
+        // Reset timetable
         session.timetable = [:]
         CLASSES.each { classGroup ->
             session.timetable[classGroup] = [:]
@@ -159,18 +197,32 @@ class TimetableController {
                 }
             }
         }
+        
+        // Reset lecture cards while preserving counts
         session.lectureCards = [:]
         CLASSES.each { classGroup ->
             generateLectureCards(classGroup)
+            
+            // Update counts based on previous assignments
+            if (assignedLectures[classGroup]) {
+                session.lectureCards[classGroup].each { card ->
+                    def assignedCount = assignedLectures[classGroup].count { assigned ->
+                        assigned.subject == card.subject && 
+                        assigned.type == card.type &&
+                        assigned.batch == card.batch
+                    }
+                    card.count = card.totalLectures - assignedCount
+                }
+            }
         }
-        
+
         flash.message = "Timetable reset successfully"
 
-        // Check if it's an AJAX request
+        // Maintain the current page/step
         if (request.xhr) {
             render([success: true, message: flash.message] as JSON)
         } else {
-            redirect(action: "index")
+            redirect(action: "index", params: [currentStep: params.currentStep, selectedClass: selectedClass])
         }
     }
 
@@ -229,12 +281,19 @@ class TimetableController {
                 return
             }
 
+            // First check teacher constraints
+            if (!isTeacherAvailablePerConstraints(lecture.teacher, day, time)) {
+                render([success: false, message: "Teacher is not available at this time according to their constraints"] as JSON)
+                return
+            }
+
+            // Then check other availability
             if (!isTeacherAvailable(selectedClass, day, time, lecture.teacher)) {
                 render([success: false, message: "Teacher is not available at this time"] as JSON)
                 return
             }
 
-            if (canAddLectureToSlot(timetable, day, time, lecture)) {
+            if (canAddLectureToSlot(timetable, day, time, lecture, selectedClass)) {
                 def subjectKey = "${lecture.subject}_${selectedClass}_${lecture.type}_${lecture.batch ?: 'NoBatch'}"
                 def lectureDetails = session.subjectDetails[subjectKey]
                 
@@ -252,6 +311,12 @@ class TimetableController {
                     def nextTimeIndex = TIME_SLOTS.indexOf(time) + 1
                     if (nextTimeIndex < TIME_SLOTS.size()) {
                         def nextTime = TIME_SLOTS[nextTimeIndex]
+                        if (!isTeacherAvailablePerConstraints(lecture.teacher, day, nextTime)) {
+                            // Rollback the assignment if next slot isn't available
+                            timetable[day][time].remove(newLecture)
+                            render([success: false, message: "Cannot assign lab - teacher not available for the required consecutive slot"] as JSON)
+                            return
+                        }
                         timetable[day][nextTime] = timetable[day][nextTime] ?: []
                         timetable[day][nextTime] << newLecture
                     }
@@ -259,7 +324,10 @@ class TimetableController {
 
                 lecture.count--
                 session.timetable[selectedClass] = timetable
-                render([success: true, message: "Lecture assigned successfully", lecture: newLecture, nextSlot: lecture.type == "Lab" ? TIME_SLOTS[TIME_SLOTS.indexOf(time) + 1] : null] as JSON)
+                render([success: true, message: "Lecture assigned successfully", 
+                    lecture: newLecture, 
+                    nextSlot: lecture.type == "Lab" ? TIME_SLOTS[TIME_SLOTS.indexOf(time) + 1] : null,
+                    remainingCount: lecture.count] as JSON)
             } else {
                 String errorMessage = lecture.type == "Lecture" ?
                     "Cannot add lecture to this slot" :
@@ -280,33 +348,53 @@ class TimetableController {
                 return
             }
 
-            def lectureCards = session.lectureCards[selectedClass] ?: []
-            if (lectureCards.isEmpty()) {
+            def allLectureCards = session.lectureCards[selectedClass] ?: []
+            if (allLectureCards.isEmpty()) {
                 render([success: false, message: "No lecture cards found for the selected class"] as JSON)
                 return
             }
 
-            def timetable = [:]
-            WEEK_DAYS.each { day ->
-                timetable[day] = [:]
-                TIME_SLOTS.each { time ->
-                    timetable[day][time] = []
+            // Preserve existing timetable assignments
+            def timetable = [:] 
+            if (session.timetable?[selectedClass]) {
+                // Clone existing timetable structure
+                timetable = session.timetable[selectedClass].collectEntries { day, slots ->
+                    [(day): slots.collectEntries { time, assignments ->
+                        [(time): assignments.collect { it.clone() }]
+                    }]
+                }
+            } else {
+                // Initialize new timetable if none exists
+                WEEK_DAYS.each { day ->
+                    timetable[day] = [:]
+                    TIME_SLOTS.each { time ->
+                        timetable[day][time] = []
+                    }
                 }
             }
 
-            // Shuffle the lecture cards to randomize placement
-            Collections.shuffle(lectureCards)
+            // Create a working copy of cards that have remaining lectures
+            def lectureCardsToAssign = allLectureCards.findAll { it.count > 0 }.collect { it.clone() }
+            
+            // Sort working copy to prioritize labs and less flexible sessions
+            lectureCardsToAssign.sort { a, b ->
+                def typeOrder = ['Lab': 1, 'Tutorial': 2, 'Lecture': 3]
+                return typeOrder[a.type] <=> typeOrder[b.type]
+            }
 
-            lectureCards.each { card ->
+            def unassignedSessions = []
+            
+            lectureCardsToAssign.each { card ->
                 def remainingLectures = card.count
                 while (remainingLectures > 0) {
                     def slot = findRandomAvailableSlot(timetable, card, selectedClass)
                     if (slot) {
+                        def subjectKey = "${card.subject}_${selectedClass}_${card.type}_${card.batch ?: 'NoBatch'}"
                         def lecture = [
                             subject: card.subject,
                             teacher: card.teacher,
                             class: selectedClass,
-                            room: assignRoom(selectedClass, slot.day, slot.time, card.type, session.subjectDetails["${card.subject}_${selectedClass}_${card.type}_${card.batch ?: 'NoBatch'}"]),
+                            room: assignRoom(selectedClass, slot.day, slot.time, card.type, session.subjectDetails[subjectKey]),
                             type: card.type,
                             batch: card.batch
                         ]
@@ -320,29 +408,48 @@ class TimetableController {
                             }
                         }
                         remainingLectures--
-                        card.count--
+                        
+                        // Update the count in the original card list
+                        def originalCard = allLectureCards.find { it.id == card.id }
+                        if (originalCard) {
+                            originalCard.count--
+                        }
                     } else {
+                        unassignedSessions << [
+                            subject: card.subject,
+                            teacher: card.teacher,
+                            type: card.type,
+                            remainingCount: remainingLectures
+                        ]
                         break
                     }
                 }
             }
 
             session.timetable[selectedClass] = timetable
-            session.lectureCards[selectedClass] = lectureCards
+            session.lectureCards[selectedClass] = allLectureCards
 
-            render([success: true, timetable: timetable, lectureCards: lectureCards] as JSON)
+            def response = [success: true, timetable: timetable, lectureCards: allLectureCards]
+            if (unassignedSessions) {
+                response.warnings = ["Some sessions could not be assigned due to constraints:"]
+                unassignedSessions.each { session ->
+                    response.warnings << "${session.subject} (${session.type}) - ${session.remainingCount} sessions remaining"
+                }
+            }
+
+            render response as JSON
         } catch (Exception e) {
             log.error("Error generating timetable: ${e.message}", e)
             render([success: false, message: "Error generating timetable: ${e.message}"] as JSON)
         }
     }
 
-    private Map findRandomAvailableSlot(Map timetable, Map card, String selectedClass) {
+    private Map findRandomAvailableSlot(Map timetable, Map card, String classGroup) {
         def availableSlots = []
         WEEK_DAYS.each { day ->
             TIME_SLOTS.each { time ->
-                if (canAddLectureToSlot(timetable, day, time, card) && 
-                    isTeacherAvailable(selectedClass, day, time, card.teacher)) {
+                if (canAddLectureToSlot(timetable, day, time, card, classGroup) && 
+                    isTeacherAvailable(classGroup, day, time, card.teacher)) {
                     availableSlots << [day: day, time: time]
                 }
             }
@@ -393,25 +500,41 @@ class TimetableController {
         return null
     }
 
-    private boolean canAddLectureToSlot(Map timetable, String day, String time, Map newLecture) {
+    private boolean canAddLectureToSlot(Map timetable, String day, String time, Map newLecture, String classGroup) {
+        // First check class constraints
+        if (!isClassAvailablePerConstraints(classGroup, day, time)) {
+            return false
+        }
+        
+        // First check teacher availability per constraints
+        if (!isTeacherAvailablePerConstraints(newLecture.teacher, day, time)) {
+            return false
+        }
+
         def currentSlot = timetable[day]?[time] ?: []
         
         if (newLecture.type == "Lecture") {
-            return currentSlot.isEmpty()
+            return currentSlot.isEmpty() &&
+                isTeacherAvailable(classGroup, day, time, newLecture.teacher)
         } else if (newLecture.type == "Lab") {
-            // For labs, check if the next slot is also available
+            // For labs, check both current and next slot availability
             def nextTimeIndex = TIME_SLOTS.indexOf(time) + 1
             if (nextTimeIndex < TIME_SLOTS.size()) {
                 def nextTime = TIME_SLOTS[nextTimeIndex]
                 def nextSlot = timetable[day]?[nextTime] ?: []
                 
-                // Check all conditions for both current and next slot
+                // Check class constraints for next slot as well
+                if (!isClassAvailablePerConstraints(classGroup, day, nextTime)) {
+                    return false
+                }
+
                 return canAddBatchToSlot(currentSlot, newLecture) && 
                     canAddBatchToSlot(nextSlot, newLecture) &&
                     !isTeacherOrRoomOccupied(currentSlot, newLecture) &&
                     !isTeacherOrRoomOccupied(nextSlot, newLecture) &&
                     !isLabRoomOccupiedByOtherClass(day, time, newLecture) &&
-                    !isLabRoomOccupiedByOtherClass(day, nextTime, newLecture)
+                    !isLabRoomOccupiedByOtherClass(day, nextTime, newLecture) &&
+                    isTeacherAvailablePerConstraints(newLecture.teacher, day, nextTime)
             }
             return false
         } else if (newLecture.type == "Tutorial") {
@@ -419,7 +542,7 @@ class TimetableController {
                 !isTeacherOrRoomOccupied(currentSlot, newLecture) &&
                 !isTutorialRoomOccupiedByOtherClass(day, time, newLecture)
         }
-
+        
         return false
     }
 
@@ -864,6 +987,143 @@ class TimetableController {
             }
         }
         return timetable
+    }
+
+    def saveTeacherConstraints() {
+        def data = request.JSON
+        def teacher = data.teacher
+        def workingDays = data.workingDays
+        def availableSlots = data.availableSlots
+
+        try {
+            // Initialize teacher constraints in session if not exists
+            if (!session.teacherConstraints) {
+                session.teacherConstraints = [:]
+            }
+
+            // Store constraints for this teacher
+            session.teacherConstraints[teacher] = [
+                workingDays: workingDays,
+                availableSlots: availableSlots
+            ]
+
+            render([success: true, message: "Constraints saved successfully"] as JSON)
+        } catch (Exception e) {
+            log.error("Error saving constraints", e)
+            render([success: false, message: "Error saving constraints: ${e.message}"] as JSON)
+        }
+    }
+
+    def getTeacherConstraints() {
+        def teacher = params.teacher
+        
+        try {
+            def constraints = session.teacherConstraints?[teacher]
+            
+            if (constraints) {
+                log.info("Found constraints for teacher ${teacher}: ${constraints}")
+                render([
+                    success: true,
+                    workingDays: constraints.workingDays,
+                    availableSlots: constraints.availableSlots
+                ] as JSON)
+            } else {
+                // Return all slots enabled if no constraints exist
+                def allSlotsEnabled = [:]
+                WEEK_DAYS.each { day ->
+                    allSlotsEnabled[day] = TIME_SLOTS.collect()  // Copy all time slots
+                }
+                
+                render([
+                    success: true,
+                    workingDays: WEEK_DAYS,  // All days enabled
+                    availableSlots: allSlotsEnabled  // All slots enabled
+                ] as JSON)
+            }
+        } catch (Exception e) {
+            log.error("Error getting constraints", e)
+            render([success: false, message: "Error getting constraints: ${e.message}"] as JSON)
+        }
+    }
+
+    private boolean isTeacherAvailablePerConstraints(String teacher, String day, String time) {
+        // Get teacher constraints from session
+        def constraints = session.teacherConstraints?[teacher]
+        
+        if (!constraints) {
+            // If no constraints set, teacher is available
+            return true
+        }
+        
+        // Check if the day and time slot are in the available slots
+        def availableSlots = constraints.availableSlots
+        return availableSlots[day]?.contains(time) ?: false
+    }
+
+    def saveClassConstraints() {
+        def data = request.JSON
+        def classGroup = data.classGroup
+        def workingDays = data.workingDays
+        def availableSlots = data.availableSlots
+
+        try {
+            // Initialize class constraints in session if not exists
+            if (!session.classConstraints) {
+                session.classConstraints = [:]
+            }
+
+            // Store constraints for this class
+            session.classConstraints[classGroup] = [
+                workingDays: workingDays,
+                availableSlots: availableSlots
+            ]
+
+            render([success: true, message: "Class constraints saved successfully"] as JSON)
+        } catch (Exception e) {
+            log.error("Error saving class constraints", e)
+            render([success: false, message: "Error saving constraints: ${e.message}"] as JSON)
+        }
+    }
+
+    def getClassConstraints() {
+        def classGroup = params.classGroup
+        
+        try {
+            def constraints = session.classConstraints?[classGroup]
+            
+            if (constraints) {
+                log.info("Found constraints for class ${classGroup}: ${constraints}")
+                render([
+                    success: true,
+                    workingDays: constraints.workingDays,
+                    availableSlots: constraints.availableSlots
+                ] as JSON)
+            } else {
+                // Return all slots enabled if no constraints exist
+                def allSlotsEnabled = [:]
+                WEEK_DAYS.each { day ->
+                    allSlotsEnabled[day] = TIME_SLOTS.collect()
+                }
+                
+                render([
+                    success: true,
+                    workingDays: WEEK_DAYS,
+                    availableSlots: allSlotsEnabled
+                ] as JSON)
+            }
+        } catch (Exception e) {
+            log.error("Error getting class constraints", e)
+            render([success: false, message: "Error getting constraints: ${e.message}"] as JSON)
+        }
+    }
+
+    // Add this helper method
+    private boolean isClassAvailablePerConstraints(String classGroup, String day, String time) {
+        def constraints = session.classConstraints?[classGroup]
+        if (!constraints) {
+            return true
+        }
+        return constraints.availableSlots[day]?.contains(time) ?: false
     }
 
     def downloadTimetable() {
