@@ -66,6 +66,31 @@
         .accordion-item {
             margin-bottom: 1rem;
         }
+
+        #step5 .timetable-cell {
+            font-size: 11px;
+            padding: 2px;
+            text-align: center;
+            max-width: 100px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .master-view-btn {
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .master-view-btn:hover {
+            background-color: #e9ecef;
+        }
+
+        .master-view-btn.active {
+            background-color: #0d6efd;
+            color: white;
+        }
+
     </style>
 </head>
 <body>
@@ -78,6 +103,7 @@
             <div class="stepper-item" data-step="2">Step 2: Constraints</div>
             <div class="stepper-item" data-step="3">Step 3: Timetable Generation</div>
             <div class="stepper-item" data-step="4">Step 4: Timetable Summary</div>
+            <div class="stepper-item" data-step="5">Step 5: Master</div>
         </div>
 
         <!-- Step 1: Subject Mapping -->
@@ -435,7 +461,7 @@
                         </select>
                     </div>
                 </div>
-                <input type="hidden" name="currentStep" id="currentStepInput" value="2">
+                <input type="hidden" name="currentStep" value="3">
             </form>
 
             <!-- Lecture Cards -->
@@ -507,6 +533,7 @@
                 </form>
                 <form action="${createLink(controller: 'timetable', action: 'resetTimetable')}" method="POST" class="me-2">
                     <input type="hidden" name="selectedClass" value="${selectedClass}">
+                    <input type="hidden" name="currentStep" value="${currentStep}">
                     <button type="submit" class="btn btn-warning">Reset Timetable</button>
                 </form>
                 <form action="${createLink(controller: 'timetable', action: 'downloadTimetable')}" method="POST">
@@ -564,6 +591,33 @@
             </div>
         </div>
 
+        <!-- Step 5: Master -->
+        <div class="step-content" id="step5">
+            <div class="row">
+                <!-- Left Sidebar -->
+                <div class="col-md-2">
+                    <div class="list-group">
+                        <button type="button" class="list-group-item list-group-item-action master-view-btn" data-view="class">
+                            <i class="bi bi-people-fill me-2"></i>Class
+                        </button>
+                        <button type="button" class="list-group-item list-group-item-action master-view-btn" data-view="room">
+                            <i class="bi bi-building me-2"></i>Room
+                        </button>
+                        <button type="button" class="list-group-item list-group-item-action master-view-btn" data-view="teacher">
+                            <i class="bi bi-person-workspace me-2"></i>Teacher
+                        </button>
+                    </div>
+                </div>
+                
+                <!-- Main Content Area -->
+                <div class="col-md-10">
+                    <div id="masterViewContent">
+                        <!-- Content will be loaded here -->
+                    </div>
+                </div>
+            </div>
+        </div>
+
         <!-- Navigation Buttons -->
         <div class="d-flex justify-content-between mt-4">
             <button id="prevBtn" class="btn btn-secondary">Previous</button>
@@ -606,7 +660,7 @@
 
         $(document).ready(function() {
             let currentStep = ${params.currentStep ? params.int('currentStep') : 1};
-            const totalSteps = 4;
+            const totalSteps = 5;
 
             function updateStepperDisplay() {
                 $('.stepper-item').removeClass('active');
@@ -626,20 +680,19 @@
                     $('#nextBtn').show();
                 }
 
-                // Update the hidden input with the current step
-                $('#currentStepInput').val(currentStep);
+                // Update URL without page reload
+                const urlParams = new URLSearchParams(window.location.search);
+                urlParams.set('currentStep', currentStep);
+                const newUrl = window.location.pathname + '?' + urlParams.toString();
+                history.pushState({}, '', newUrl);
             }
 
-            // Initialize the correct step
-            updateStepperDisplay();
-
-            // Stepper functionality
+            // Add click event handlers after document ready
             $('.stepper-item').click(function() {
                 currentStep = parseInt($(this).data('step'));
                 updateStepperDisplay();
             });
 
-            // Navigation button functionality
             $('#nextBtn').click(function() {
                 if (currentStep < totalSteps) {
                     currentStep++;
@@ -653,6 +706,20 @@
                     updateStepperDisplay();
                 }
             });
+
+            // Handle browser back/forward buttons
+            window.addEventListener('popstate', function() {
+                const urlParams = new URLSearchParams(window.location.search);
+                const step = urlParams.get('currentStep');
+                if (step) {
+                    currentStep = parseInt(step);
+                    updateStepperDisplay();
+                }
+            });
+
+            // Initialize step on page load
+            updateStepperDisplay();
+
 
             if ($('#constraintTeacher option').length > 0) {
                 $('#constraintTeacher').prop('selectedIndex', 0).trigger('change');
@@ -1168,6 +1235,12 @@
 
             // Class filter change handler
             $('#selectedClass').change(function() {
+                const currentStep = $('.stepper-item.active').data('step'); // Get current active step
+                
+                // Update form's hidden input with current step
+                $('#currentStepInput').val(currentStep);
+                
+                // Submit form
                 $('#filterForm').submit();
             });
             
@@ -1378,6 +1451,79 @@
                     }
                 });
             });
+        
+            $('.master-view-btn').click(function() {
+                $('.master-view-btn').removeClass('active');
+                $(this).addClass('active');
+                
+                var viewType = $(this).data('view');
+                $('#masterViewContent').html(''); // Clear previous content
+                
+                switch(viewType) {
+                    case 'class':
+                        loadAllTimetables('option1', data.classes, 'Class Timetables');
+                        break;
+                    case 'room':
+                        loadAllTimetables('option3', data.allRooms, 'Room Timetables');
+                        break;
+                    case 'teacher':
+                        loadAllTimetables('option2', data.teachers, 'Teacher Timetables');
+                        break;
+                }
+            });
+
+            function loadAllTimetables(type, entities, title) {
+                let html = `<h3 class="mb-4">${title}</h3>`;
+                
+                entities.forEach(function(entity) {
+                    $.ajax({
+                        url: '${createLink(controller: 'timetable', action: 'getTimetableForEntity')}',
+                        data: { 
+                            type: type,
+                            value: entity
+                        },
+                        success: function(response) {
+                            if (response.success) {
+                                html += createCompactTimetableHtml(entity, response.timetable);
+                                $('#masterViewContent').html(html);
+                            }
+                        }
+                    });
+                });
+            }
+
+            function createCompactTimetableHtml(entity, timetable) {
+                let html = '<div class="card mb-4">' +
+                    '<div class="card-header">' +
+                    '<h5 class="card-title mb-0">' + entity + '</h5>' +
+                    '</div>' +
+                    '<div class="card-body p-2">' +
+                    '<div class="table-responsive">' +
+                    '<table class="table table-bordered table-sm">' +
+                    '<thead><tr><th>Day/Time</th>';
+                
+                // Add time slot headers
+                data.timeSlots.forEach(function(slot) {
+                    html += '<th>' + slot + '</th>';
+                });
+                
+                html += '</tr></thead><tbody>';
+                
+                // Add rows for each day
+                data.weekDays.forEach(function(day) {
+                    html += '<tr><th>' + day + '</th>';
+                    data.timeSlots.forEach(function(time) {
+                        let sessions = timetable[day]?.[time] || [];
+                        let content = sessions.map(session => session.subject).join(', ') || '-';
+                        html += '<td class="timetable-cell">' + content + '</td>';
+                    });
+                    html += '</tr>';
+                });
+                
+                html += '</tbody></table></div></div></div>';
+                
+                return html;
+            }
         });
     </script>
 </body>

@@ -28,7 +28,8 @@ class TimetableController {
     
     def index() {
         def selectedClass = params.selectedClass ?: CLASSES[0]
-        def currentStep = params.currentStep ? params.int('currentStep') : 1
+        def currentStep = params.currentStep ? params.int('currentStep') : (session.currentStep ?: 1)
+        session.currentStep = currentStep
 
         // Initialize session.timetable if it doesn't exist
         if (!session.timetable) {
@@ -107,7 +108,7 @@ class TimetableController {
             session.lectureCards = [:]
         }
         if (!session.originalLectureCards) {
-            session.originalLectureCards = [:]  // Store original counts
+            session.originalLectureCards = [:]
         }
         session.lectureCards[selectedClass] = []
 
@@ -119,24 +120,41 @@ class TimetableController {
         }
 
         def existingTimetable = session.timetable[selectedClass]
+        def processedLabSlots = []
         
         filterSubjectDetailsByClass(selectedClass).each { key, details ->
-            // Get the total assigned lectures for this subject
             int assignedLectures = 0
+            
             existingTimetable.each { day, slots ->
                 slots.each { time, slotList ->
-                    assignedLectures += slotList.count { it.subject == details.subject && it.batch == details.batch }
+                    slotList.findAll { session ->
+                        session.subject == details.subject && session.batch == details.batch
+                    }.each { session ->
+                        if (session.type == 'Lab') {
+                            def labIdentifier = "${day}_${time}_${session.subject}_${session.batch}"
+                            if (!processedLabSlots.contains(labIdentifier)) {
+                                assignedLectures++
+                                processedLabSlots << labIdentifier
+                                def nextTimeIndex = TIME_SLOTS.indexOf(time) + 1
+                                if (nextTimeIndex < TIME_SLOTS.size()) {
+                                    def nextTime = TIME_SLOTS[nextTimeIndex]
+                                    processedLabSlots << "${day}_${nextTime}_${session.subject}_${session.batch}"
+                                }
+                            }
+                        } else {
+                            assignedLectures++
+                        }
+                    }
                 }
             }
             
             def totalLectures = details.lecturesPerWeek
-            def remainingLectures = totalLectures - assignedLectures
+            def remainingLectures = Math.max(0, totalLectures - assignedLectures)  // Ensure we don't go negative
             
-            // Create cards regardless of remaining lectures
             def cardBase = [
                 subject: details.subject,
                 teacher: details.teacher,
-                totalLectures: totalLectures,  // Store total lectures
+                totalLectures: totalLectures,
                 count: remainingLectures,
                 type: details.type,
                 roomAllocation: details.roomAllocation,
@@ -148,7 +166,6 @@ class TimetableController {
                     id: "${details.subject}_${details.class}_${details.type}".toString()
                 ]
                 session.lectureCards[selectedClass] << card
-                // Store original state
                 if (!session.originalLectureCards[selectedClass]) {
                     session.originalLectureCards[selectedClass] = []
                 }
@@ -162,7 +179,6 @@ class TimetableController {
                         batch: batchNumber
                     ]
                     session.lectureCards[selectedClass] << card
-                    // Store original state
                     if (!session.originalLectureCards[selectedClass]) {
                         session.originalLectureCards[selectedClass] = []
                     }
@@ -177,11 +193,31 @@ class TimetableController {
 
         // Clear only the timetable entries but keep track of assignments
         def assignedLectures = [:]
+        Set<String> countedLabSlots = [] // Track counted lab slots
+        
         session.timetable?.each { classGroup, classTimetable ->
             assignedLectures[classGroup] = []
+            
             classTimetable.each { day, daySlots ->
                 daySlots.each { time, slots ->
-                    assignedLectures[classGroup].addAll(slots)
+                    slots.each { session ->
+                        if (session.type == 'Lab') {
+                            // For labs, only count if we haven't counted this slot's pair
+                            String slotIdentifier = "${day}_${time}_${session.subject}_${session.batch}"
+                            if (!countedLabSlots.contains(slotIdentifier)) {
+                                assignedLectures[classGroup] << session
+                                // Add both this slot and the next slot to counted slots
+                                countedLabSlots.add(slotIdentifier)
+                                def nextTimeIndex = TIME_SLOTS.indexOf(time) + 1
+                                if (nextTimeIndex < TIME_SLOTS.size()) {
+                                    def nextTime = TIME_SLOTS[nextTimeIndex]
+                                    countedLabSlots.add("${day}_${nextTime}_${session.subject}_${session.batch}")
+                                }
+                            }
+                        } else {
+                            assignedLectures[classGroup] << session
+                        }
+                    }
                 }
             }
         }
@@ -318,11 +354,15 @@ class TimetableController {
                             return
                         }
                         timetable[day][nextTime] = timetable[day][nextTime] ?: []
-                        timetable[day][nextTime] << newLecture
+                        // Clone the lecture for the next slot
+                        timetable[day][nextTime] << newLecture.clone()
+                        // Note: We don't decrement the count again for the second slot
                     }
                 }
 
+                // Decrement count only once, regardless of whether it's a lab or not
                 lecture.count--
+                
                 session.timetable[selectedClass] = timetable
                 render([success: true, message: "Lecture assigned successfully", 
                     lecture: newLecture, 
@@ -399,17 +439,21 @@ class TimetableController {
                             batch: card.batch
                         ]
 
+                        // Add lecture to current slot
                         timetable[slot.day][slot.time] << lecture
+                        
+                        // For labs, add to next slot but don't decrement count again
                         if (card.type == "Lab") {
                             def nextTimeIndex = TIME_SLOTS.indexOf(slot.time) + 1
                             if (nextTimeIndex < TIME_SLOTS.size()) {
                                 def nextTime = TIME_SLOTS[nextTimeIndex]
-                                timetable[slot.day][nextTime] << lecture
+                                timetable[slot.day][nextTime] << lecture.clone()
                             }
                         }
+                        
                         remainingLectures--
                         
-                        // Update the count in the original card list
+                        // Update the count in the original card list only once per assignment
                         def originalCard = allLectureCards.find { it.id == card.id }
                         if (originalCard) {
                             originalCard.count--
