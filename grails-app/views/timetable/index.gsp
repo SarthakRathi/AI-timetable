@@ -723,48 +723,30 @@
         }
 
         $(document).ready(function() {
-            let currentStep = ${params.currentStep ? params.int('currentStep') : 1};
-            const totalSteps = 5;
+            const totalSteps = 5; // Define totalSteps constant
 
-            function updateStepperDisplay() {
-                $('.stepper-item').removeClass('active');
-                $('.stepper-item[data-step="' + currentStep + '"]').addClass('active');
-                $('.step-content').removeClass('active').hide();
-                $('#step' + currentStep).fadeIn().addClass('active');
-
-                // Update navigation buttons
-                if (currentStep === 1) {
-                    $('#prevBtn').hide();
-                    $('#nextBtn').show();
-                } else if (currentStep === totalSteps) {
-                    $('#prevBtn').show();
-                    $('#nextBtn').hide();
-                } else {
-                    $('#prevBtn').show();
-                    $('#nextBtn').show();
-                }
-
-                // Update URL without page reload
+            let currentStep = (() => {
+                // First try to get from URL params
                 const urlParams = new URLSearchParams(window.location.search);
-                urlParams.set('currentStep', currentStep);
-                const newUrl = window.location.pathname + '?' + urlParams.toString();
-                history.pushState({}, '', newUrl);
-
-                // Initialize constraints when step 2 is shown
-                if (currentStep === 2) {
-                    if ($('#constraintTeacher option').length > 0) {
-                        $('#constraintTeacher').prop('selectedIndex', 0).trigger('change');
-                    }
-                    if ($('#constraintClass option').length > 0) {
-                        $('#constraintClass').prop('selectedIndex', 0).trigger('change');
-                    }
+                const urlStep = urlParams.get('currentStep');
+                
+                // Parse and validate the step number
+                const parsedStep = parseInt(urlStep);
+                if (!isNaN(parsedStep) && parsedStep >= 1 && parsedStep <= totalSteps) {
+                    return parsedStep;
                 }
-            }
+                
+                // If invalid or no param in URL, use the server-provided currentStep or default to 1
+                return ${params.currentStep ? params.int('currentStep') : 1};
+            })();
 
-            // Add click event handlers after document ready
+            // Stepper click handlers
             $('.stepper-item').click(function() {
-                currentStep = parseInt($(this).data('step'));
-                updateStepperDisplay();
+                const newStep = parseInt($(this).data('step'));
+                if (!isNaN(newStep) && newStep >= 1 && newStep <= totalSteps) {
+                    currentStep = newStep;
+                    updateStepperDisplay();
+                }
             });
 
             $('#nextBtn').click(function() {
@@ -781,17 +763,62 @@
                 }
             });
 
-            // Handle browser back/forward buttons
-            window.addEventListener('popstate', function() {
+            function updateStepperDisplay() {
+                // Ensure currentStep is a valid number between 1 and totalSteps
+                currentStep = Math.min(Math.max(1, parseInt(currentStep) || 1), totalSteps);
+
+                // Update the UI
+                $('.stepper-item').removeClass('active');
+                $('.stepper-item[data-step="' + currentStep + '"]').addClass('active');
+                $('.step-content').removeClass('active').hide();
+                $('#step' + currentStep).fadeIn().addClass('active');
+
+                // Update navigation buttons
+                $('#prevBtn').toggle(currentStep > 1);
+                $('#nextBtn').toggle(currentStep < totalSteps);
+
+                // Update URL while preserving other parameters
                 const urlParams = new URLSearchParams(window.location.search);
-                const step = urlParams.get('currentStep');
-                if (step) {
-                    currentStep = parseInt(step);
+                urlParams.set('currentStep', currentStep);
+                
+                // Preserve selectedClass parameter if it exists
+                const selectedClass = urlParams.get('selectedClass');
+                if (selectedClass) {
+                    urlParams.set('selectedClass', selectedClass);
+                }
+                
+                const newUrl = window.location.pathname + '?' + urlParams.toString();
+                history.pushState({currentStep: currentStep}, '', newUrl);
+
+                // Initialize specific step content if needed
+                if (currentStep === 2) {
+                    if ($('#constraintTeacher option').length > 0) {
+                        $('#constraintTeacher').prop('selectedIndex', 0).trigger('change');
+                    }
+                    if ($('#constraintClass option').length > 0) {
+                        $('#constraintClass').prop('selectedIndex', 0).trigger('change');
+                    }
+                }
+            }
+
+            // Handle browser back/forward buttons
+            window.addEventListener('popstate', function(event) {
+                if (event.state && !isNaN(event.state.currentStep)) {
+                    currentStep = Math.min(Math.max(1, event.state.currentStep), totalSteps);
+                    updateStepperDisplay();
+                } else {
+                    const urlParams = new URLSearchParams(window.location.search);
+                    const step = parseInt(urlParams.get('currentStep'));
+                    if (!isNaN(step) && step >= 1 && step <= totalSteps) {
+                        currentStep = step;
+                    } else {
+                        currentStep = 1;
+                    }
                     updateStepperDisplay();
                 }
             });
 
-            // Initialize step on page load
+            // Initialize on page load
             updateStepperDisplay();
 
             // Set default dates when modal opens
@@ -984,7 +1011,7 @@
                 });
             }
             
-            $('#saveConstraints').click(function() {
+            $('#saveTeacherConstraints').click(function() {
                 const teacher = $('#constraintTeacher').val();
                 if (!teacher) {
                     alert('Please select a teacher');
@@ -998,8 +1025,8 @@
                 data.weekDays.forEach(day => {
                     availableSlots[day] = [];
                     
-                    // Get all checked slots for this day
-                    $('.time-slot[data-day="' + day + '"]:checked').each(function() {
+                    // Get all checked slots for this day using the correct class
+                    $('.teacher-time-slot[data-day="' + day + '"]:checked').each(function() {
                         const slot = $(this).data('slot');
                         availableSlots[day].push(slot);
                         if (slot) {
@@ -1011,7 +1038,7 @@
                 console.log("Saving constraints for", teacher, {
                     workingDays: Array.from(workingDays),
                     availableSlots: availableSlots
-                }); // Debug log
+                });
                 
                 // Save constraints
                 $.ajax({
@@ -1025,7 +1052,7 @@
                     }),
                     success: function(response) {
                         if (response.success) {
-                            alert('Constraints saved successfully');
+                            alert('Teacher constraints saved successfully');
                         } else {
                             console.error("Error saving constraints:", response.message);
                             alert('Error saving constraints: ' + response.message);
@@ -1599,21 +1626,20 @@
 
             $('form[action$="/resetTimetable"]').submit(function(e) {
                 e.preventDefault();
-                var currentStep = $('#currentStepInput').val();
                 var selectedClass = $('#selectedClass').val();
                 
                 $.ajax({
                     url: this.action,
                     method: 'POST',
                     data: {
-                        currentStep: currentStep,
+                        currentStep: currentStep,  // Use the global currentStep variable
                         selectedClass: selectedClass
                     },
                     success: function(response) {
                         if (response.success) {
-                            // Reload the page with the same step and class
+                            // Reload the page while preserving currentStep=3 and selectedClass
                             window.location.href = '${createLink(controller: "timetable", action: "index")}' +
-                                '?currentStep=' + currentStep + '&selectedClass=' + selectedClass;
+                                '?currentStep=3&selectedClass=' + selectedClass;
                         } else {
                             alert('Error resetting timetable: ' + response.message);
                         }
