@@ -91,6 +91,39 @@
             color: white;
         }
 
+        .lecture-card.lecture-type {
+            background-color: #e3f2fd;
+        }
+
+        .lecture-card.lab-type {
+            background-color: #e8f5e9;
+        }
+
+        .lecture-card.tutorial-type {
+            background-color: #f3e5f5;
+        }
+
+        .timetable-cell .lecture-session {
+            background-color: #e3f2fd;
+            padding: 5px;
+            margin-bottom: 5px;
+            border-radius: 4px;
+        }
+
+        .timetable-cell .lab-session {
+            background-color: #e8f5e9;
+            padding: 5px;
+            margin-bottom: 5px;
+            border-radius: 4px;
+        }
+
+        .timetable-cell .tutorial-session {
+            background-color: #f3e5f5;
+            padding: 5px;
+            margin-bottom: 5px;
+            border-radius: 4px;
+        }
+
     </style>
 </head>
 <body>
@@ -502,17 +535,18 @@
                                     <g:if test="${timetable[day]?.get(time)?.size() > 0}">
                                         <g:each in="${timetable[day][time]}" var="session" status="j">
                                             <g:if test="${session}">
-                                                <g:if test="${session.type != 'Lecture'}">
-                                                    Batch ${session.batch}<br>
-                                                </g:if>
-                                                Subject: ${session.subject ?: 'N/A'}<br>
-                                                Teacher: ${session.teacher ?: 'N/A'}<br>
-                                                Room: ${session.room ?: 'TBD'}<br>
-                                                Type: ${session.type ?: 'N/A'}<br>
-                                                <g:if test="${session.type == 'Lab'}">
-                                                    (2 hours)
-                                                </g:if>
-                                                <br>
+                                                <div class="${session.type.toLowerCase()}-session">
+                                                    <g:if test="${session.type != 'Lecture'}">
+                                                        Batch ${session.batch}<br>
+                                                    </g:if>
+                                                    Subject: ${session.subject ?: 'N/A'}<br>
+                                                    Teacher: ${session.teacher ?: 'N/A'}<br>
+                                                    Room: ${session.room ?: 'TBD'}<br>
+                                                    Type: ${session.type ?: 'N/A'}<br>
+                                                    <g:if test="${session.type == 'Lab'}">
+                                                        (2 hours)
+                                                    </g:if>
+                                                </div>
                                             </g:if>
                                         </g:each>
                                     </g:if>
@@ -1424,7 +1458,8 @@
                     let content = sessions.length > 0 ? '' : '-';  // Default content for empty slots
 
                     sessions.forEach((session) => {
-                        content += '<div style="padding: 5px; margin-bottom: 5px;">';
+                        let typeClass = session.type.toLowerCase() + '-session';
+                        content += '<div class="' + typeClass + '">';
                         content += (session.type !== 'Lecture' ? 'Batch ' + (session.batch || 'N/A') + '<br>' : '') +
                                 'Subject: ' + (session.subject || 'N/A') + '<br>' +
                                 'Teacher: ' + (session.teacher || 'N/A') + '<br>' +
@@ -1448,8 +1483,10 @@
                 
                 lectureCards.forEach(function(card) {
                     var isDisabled = card.count <= 0;
+                    var typeClass = card.type.toLowerCase() + '-type';
                     var cardHtml = '<div class="col-md-3 mb-2">' +
-                        '<div class="lecture-card shadow p-3 rounded' + (isDisabled ? ' disabled' : '') + '" data-id="' + card.id + '">' +
+                        '<div class="lecture-card shadow p-3 rounded ' + typeClass + 
+                        (isDisabled ? ' disabled' : '') + '" data-id="' + card.id + '">' +
                         '<h6>' + card.subject + ' (' + card.type + ')</h6>' +
                         '<h6>Teacher: ' + card.teacher + '</h6>';
                     
@@ -1471,7 +1508,8 @@
                 let currentContent = cell.html().trim();
 
                 if (lecture) {
-                    let newContent = '<div style="padding: 5px; margin-bottom: 5px;">';
+                    let typeClass = lecture.type.toLowerCase() + '-session';
+                    let newContent = '<div class="' + typeClass + '">';
                     if (lecture.type !== 'Lecture') {
                         newContent += 'Batch ' + (lecture.batch || 'N/A') + '<br>';
                     }
