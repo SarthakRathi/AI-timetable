@@ -537,8 +537,38 @@
                     <button type="submit" class="btn btn-warning">Reset Timetable</button>
                 </form>
                 <form action="${createLink(controller: 'timetable', action: 'downloadTimetable')}" method="POST">
-                    <button type="submit" class="btn btn-primary">Download Timetable</button>
+                    <button type="submit" class="btn btn-primary me-2">Download Timetable</button>
                 </form>
+                <button id="syncCalendarBtn" class="btn btn-info me-2" data-bs-toggle="modal" data-bs-target="#calendarModal">
+                    Add to Google Calendar
+                </button>
+            </div>
+        </div>
+
+        <div class="modal fade" id="calendarModal" tabindex="-1">
+            <div class="modal-dialog">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h5 class="modal-title">Google Calendar Sync</h5>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                    </div>
+                    <div class="modal-body">
+                        <div class="mb-3">
+                            <label for="startDate" class="form-label">Select Start Date:</label>
+                            <input type="date" class="form-control" id="startDate" required>
+                        </div>
+                        <div class="mb-3">
+                            <label for="endDate" class="form-label">Select End Date:</label>
+                            <input type="date" class="form-control" id="endDate" required>
+                        </div>
+                        <div id="calendarLinkContainer" class="d-none">
+                            <p class="mb-2">Click below to add all lectures to your Google Calendar:</p>
+                            <a href="#" id="calendarLink" target="_blank" class="btn btn-primary">
+                                Add to Google Calendar
+                            </a>
+                        </div>
+                    </div>
+                </div>
             </div>
         </div>
 
@@ -720,6 +750,60 @@
             // Initialize step on page load
             updateStepperDisplay();
 
+            // Set default dates when modal opens
+            $('#calendarModal').on('show.bs.modal', function() {
+                let date = new Date();
+                while (date.getDay() !== 1) { // 1 is Monday
+                    date.setDate(date.getDate() + 1);
+                }
+                $('#startDate').val(date.toISOString().split('T')[0]);
+                
+                // Set default end date to 4 months from start
+                let endDate = new Date(date);
+                endDate.setMonth(endDate.getMonth() + 4);
+                $('#endDate').val(endDate.toISOString().split('T')[0]);
+                
+                // Show calendar link container
+                $('#calendarLinkContainer').removeClass('d-none');
+            });
+            
+            // Handle click on Add to Google Calendar button
+            $('#calendarLink').click(function(e) {
+                e.preventDefault();
+                const startDate = $('#startDate').val();
+                const endDate = $('#endDate').val();
+                
+                if (!startDate || !endDate) {
+                    alert('Please select both start and end dates');
+                    return;
+                }
+                
+                if (new Date(endDate) <= new Date(startDate)) {
+                    alert('End date must be after start date');
+                    return;
+                }
+                
+                $.ajax({
+                    url: '${createLink(controller: "timetable", action: "getCalendarLinks")}',
+                    method: 'GET',
+                    data: { 
+                        selectedClass: $('#selectedClass').val(),
+                        startDate: startDate,
+                        endDate: endDate
+                    },
+                    success: function(response) {
+                        if (response.success) {
+                            window.open(response.url, '_blank');
+                        } else {
+                            alert('Error: ' + (response.message || 'Failed to generate calendar link'));
+                        }
+                    },
+                    error: function(xhr, status, error) {
+                        alert('Error: Failed to generate calendar link');
+                        console.error(error);
+                    }
+                });
+            });
 
             if ($('#constraintTeacher option').length > 0) {
                 $('#constraintTeacher').prop('selectedIndex', 0).trigger('change');

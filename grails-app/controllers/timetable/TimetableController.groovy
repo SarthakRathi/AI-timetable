@@ -11,6 +11,7 @@ import org.apache.poi.xssf.usermodel.XSSFSheet
 import org.apache.poi.xssf.usermodel.XSSFRow
 import org.apache.poi.xssf.usermodel.XSSFCell
 import org.apache.poi.ss.util.CellRangeAddressList
+import java.text.SimpleDateFormat
 
 
 class TimetableController {
@@ -1031,6 +1032,107 @@ class TimetableController {
             }
         }
         return timetable
+    }
+
+    def getCalendarLinks() {
+        def selectedClass = params.selectedClass
+        def startDate = params.startDate
+        def endDate = params.endDate
+        def timetable = session.timetable[selectedClass]
+        
+        def calendarUrl = generateCalendarUrl(timetable, selectedClass, startDate, endDate)
+        
+        render([success: true, url: calendarUrl] as JSON)
+    }
+
+    private String generateCalendarUrl(Map timetable, String className, String startDateStr, String endDateStr) {
+        // Parse dates using SimpleDateFormat
+        def sdf = new SimpleDateFormat("yyyy-MM-dd")
+        def formatDateTime = new SimpleDateFormat("yyyyMMdd'T'HHmmss")
+        def startDate = sdf.parse(startDateStr)
+        def endDate = sdf.parse(endDateStr)
+        
+        def calendar = Calendar.getInstance()
+        calendar.setTime(startDate)
+        
+        def events = []
+        
+        timetable.each { day, slots ->
+            slots.each { time, sessions ->
+                sessions.each { session ->
+                    // Set event time
+                    def eventCal = calendar.clone() as Calendar
+                    
+                    // Move to correct day of week
+                    while (eventCal.get(Calendar.DAY_OF_WEEK) != getDayNumber(day)) {
+                        eventCal.add(Calendar.DATE, 1)
+                    }
+                    
+                    // Set time
+                    def (hour, minute) = time.split(':').collect { it.toInteger() }
+                    eventCal.set(Calendar.HOUR_OF_DAY, hour)
+                    eventCal.set(Calendar.MINUTE, minute)
+                    eventCal.set(Calendar.SECOND, 0)
+                    
+                    def startTime = eventCal.clone() as Calendar
+                    def endTime = eventCal.clone() as Calendar
+                    
+                    // Set duration
+                    if (session.type == 'Lab') {
+                        endTime.add(Calendar.HOUR_OF_DAY, 2)
+                    } else {
+                        endTime.add(Calendar.HOUR_OF_DAY, 1)
+                    }
+                    
+                    // Calculate until date for recurrence (end date)
+                    def untilStr = formatDateTime.format(endDate)
+                    
+                    // Format for Google Calendar
+                    def details = """Teacher: ${session.teacher}
+                        Room: ${session.room}
+                        ${session.batch ? 'Batch: ' + session.batch : ''}
+                        Class: ${className}"""
+
+                    events << [
+                        text: "${session.subject} (${session.type})",
+                        details: details.toString().trim(),
+                        location: session.room,
+                        start: formatDateTime.format(startTime.time),
+                        end: formatDateTime.format(endTime.time),
+                        recur: "FREQ=WEEKLY;UNTIL=${untilStr}"
+                    ]
+                }
+            }
+        }
+        
+        // Generate single URL for all events
+        def baseUrl = 'https://calendar.google.com/calendar/render'
+        def params = new StringBuilder()
+        
+        events.eachWithIndex { event, index ->
+            params.append(index == 0 ? '?' : '&')
+            params.append("action=TEMPLATE")
+            params.append("&text=${URLEncoder.encode(event.text, 'UTF-8')}")
+            params.append("&details=${URLEncoder.encode(event.details, 'UTF-8')}")
+            params.append("&location=${URLEncoder.encode(event.location, 'UTF-8')}")
+            params.append("&dates=${event.start}/${event.end}")
+            params.append("&recur=RRULE:${event.recur}")
+        }
+        
+        return baseUrl + params.toString()
+    }
+
+    private int getDayNumber(String day) {
+        def dayMap = [
+            'Monday': Calendar.MONDAY,
+            'Tuesday': Calendar.TUESDAY,
+            'Wednesday': Calendar.WEDNESDAY,
+            'Thursday': Calendar.THURSDAY,
+            'Friday': Calendar.FRIDAY,
+            'Saturday': Calendar.SATURDAY,
+            'Sunday': Calendar.SUNDAY
+        ]
+        return dayMap[day]
     }
 
     def saveTeacherConstraints() {
