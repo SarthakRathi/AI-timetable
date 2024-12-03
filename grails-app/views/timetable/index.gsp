@@ -749,6 +749,16 @@
                 urlParams.set('currentStep', currentStep);
                 const newUrl = window.location.pathname + '?' + urlParams.toString();
                 history.pushState({}, '', newUrl);
+
+                // Initialize constraints when step 2 is shown
+                if (currentStep === 2) {
+                    if ($('#constraintTeacher option').length > 0) {
+                        $('#constraintTeacher').prop('selectedIndex', 0).trigger('change');
+                    }
+                    if ($('#constraintClass option').length > 0) {
+                        $('#constraintClass').prop('selectedIndex', 0).trigger('change');
+                    }
+                }
             }
 
             // Add click event handlers after document ready
@@ -843,13 +853,54 @@
                 $('#constraintTeacher').prop('selectedIndex', 0).trigger('change');
             }
 
-            $('#clearAllSlots').click(function() {
-                $('.time-slot, .select-row, .select-column').prop('checked', false);
+            $('#clearAllTeacherSlots').click(function() {
+                $('.teacher-time-slot, .teacher-select-row, .teacher-select-column').prop('checked', false);
             });
 
-            // Select all slots
-            $('#selectAllSlots').click(function() {
-                $('.time-slot, .select-row, .select-column').prop('checked', true);
+            $('#selectAllTeacherSlots').click(function() {
+                $('.teacher-time-slot, .teacher-select-row, .teacher-select-column').prop('checked', true);
+            });
+
+            // Handle row selection (time slot) for teacher
+            $('.teacher-select-row').change(function() {
+                const slot = $(this).data('slot');
+                const isChecked = $(this).is(':checked');
+                $('.teacher-time-slot[data-slot="' + slot + '"]').prop('checked', isChecked);
+                updateTeacherColumnCheckboxes();
+            });
+
+            // Handle column selection (day) for teacher
+            $('.teacher-select-column').change(function() {
+                const day = $(this).data('day');
+                const isChecked = $(this).is(':checked');
+                $('.teacher-time-slot[data-day="' + day + '"]').prop('checked', isChecked);
+                updateTeacherRowCheckboxes();
+            });
+
+            // Update row checkboxes for teacher
+            function updateTeacherRowCheckboxes() {
+                $('.teacher-select-row').each(function() {
+                    const slot = $(this).data('slot');
+                    const allChecked = $('.teacher-time-slot[data-slot="' + slot + '"]').length === 
+                                    $('.teacher-time-slot[data-slot="' + slot + '"]:checked').length;
+                    $(this).prop('checked', allChecked);
+                });
+            }
+
+            // Update column checkboxes for teacher
+            function updateTeacherColumnCheckboxes() {
+                $('.teacher-select-column').each(function() {
+                    const day = $(this).data('day');
+                    const allChecked = $('.teacher-time-slot[data-day="' + day + '"]').length === 
+                                    $('.teacher-time-slot[data-day="' + day + '"]:checked').length;
+                    $(this).prop('checked', allChecked);
+                });
+            }
+
+            // Update checkboxes when individual teacher time slots are clicked
+            $('.teacher-time-slot').change(function() {
+                updateTeacherRowCheckboxes();
+                updateTeacherColumnCheckboxes();
             });
 
             // Handle row selection (time slot)
