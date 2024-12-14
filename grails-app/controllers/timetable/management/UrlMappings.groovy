@@ -1,3 +1,5 @@
+// File: grails-app\controllers\timetable\management\UrlMappings.groovy
+
 package timetable
 
 class UrlMappings {
