@@ -357,7 +357,6 @@ class TimetableController {
                         timetable[day][nextTime] = timetable[day][nextTime] ?: []
                         // Clone the lecture for the next slot
                         timetable[day][nextTime] << newLecture.clone()
-                        // Note: We don't decrement the count again for the second slot
                     }
                 }
 
@@ -489,430 +488,22 @@ class TimetableController {
         }
     }
 
-    private Map findRandomAvailableSlot(Map timetable, Map card, String classGroup) {
+    // Modified method: returns the first available slot instead of a random one
+    private Map findRandomAvailableSlot(Map timetable, Map card, String selectedClass) {
         def availableSlots = []
         WEEK_DAYS.each { day ->
             TIME_SLOTS.each { time ->
-                if (canAddLectureToSlot(timetable, day, time, card, classGroup) && 
-                    isTeacherAvailable(classGroup, day, time, card.teacher)) {
+                if (canAddLectureToSlot(timetable, day, time, card, selectedClass) && 
+                    isTeacherAvailable(selectedClass, day, time, card.teacher)) {
                     availableSlots << [day: day, time: time]
                 }
             }
         }
-        return availableSlots ? availableSlots[new Random().nextInt(availableSlots.size())] : null
-    }
-
-    private void assignSessions(List cards, Map timetable, String selectedClass) {
-        cards.each { card ->
-            def remainingLectures = card.count
-            while (remainingLectures > 0) {
-                def slot = findAvailableSlot(timetable, card, selectedClass)
-                if (slot) {
-                    def lecture = [
-                        subject: card.subject,
-                        teacher: card.teacher,
-                        class: selectedClass,
-                        room: assignRoom(selectedClass, slot.day, slot.time, card.type),
-                        type: card.type,
-                        batch: card.batch // This is important for labs and tutorials
-                    ]
-
-                    timetable[slot.day][slot.time] << lecture
-                    if (card.type == "Lab") {
-                        def nextTimeIndex = TIME_SLOTS.indexOf(slot.time) + 1
-                        if (nextTimeIndex < TIME_SLOTS.size()) {
-                            def nextTime = TIME_SLOTS[nextTimeIndex]
-                            timetable[slot.day][nextTime] << lecture
-                        }
-                    }
-                    remainingLectures--
-                    card.count--
-                } else {
-                    break
-                }
-            }
-        }
-    }
-
-    private Map findExistingSlotWithSpace(Map timetable, Map card) {
-        for (day in WEEK_DAYS) {
-            for (time in TIME_SLOTS) {
-                if (canAddLectureToSlot(timetable[day][time], card)) {
-                    return [day: day, time: time]
-                }
-            }
-        }
-        return null
-    }
-
-    private boolean canAddLectureToSlot(Map timetable, String day, String time, Map newLecture, String classGroup) {
-        // First check class constraints
-        if (!isClassAvailablePerConstraints(classGroup, day, time)) {
-            return false
-        }
-        
-        // First check teacher availability per constraints
-        if (!isTeacherAvailablePerConstraints(newLecture.teacher, day, time)) {
-            return false
-        }
-
-        def currentSlot = timetable[day]?[time] ?: []
-        
-        if (newLecture.type == "Lecture") {
-            return currentSlot.isEmpty() &&
-                isTeacherAvailable(classGroup, day, time, newLecture.teacher)
-        } else if (newLecture.type == "Lab") {
-            // For labs, check both current and next slot availability
-            def nextTimeIndex = TIME_SLOTS.indexOf(time) + 1
-            if (nextTimeIndex < TIME_SLOTS.size()) {
-                def nextTime = TIME_SLOTS[nextTimeIndex]
-                def nextSlot = timetable[day]?[nextTime] ?: []
-                
-                // Check class constraints for next slot as well
-                if (!isClassAvailablePerConstraints(classGroup, day, nextTime)) {
-                    return false
-                }
-
-                return canAddBatchToSlot(currentSlot, newLecture) && 
-                    canAddBatchToSlot(nextSlot, newLecture) &&
-                    !isTeacherOrRoomOccupied(currentSlot, newLecture) &&
-                    !isTeacherOrRoomOccupied(nextSlot, newLecture) &&
-                    !isLabRoomOccupiedByOtherClass(day, time, newLecture) &&
-                    !isLabRoomOccupiedByOtherClass(day, nextTime, newLecture) &&
-                    isTeacherAvailablePerConstraints(newLecture.teacher, day, nextTime)
-            }
-            return false
-        } else if (newLecture.type == "Tutorial") {
-            return canAddBatchToSlot(currentSlot, newLecture) &&
-                !isTeacherOrRoomOccupied(currentSlot, newLecture) &&
-                !isTutorialRoomOccupiedByOtherClass(day, time, newLecture)
-        }
-        
-        return false
-    }
-
-    private boolean isLabRoomOccupiedByOtherClass(String day, String time, Map newLecture) {
-        return session.timetable.any { className, classTimetable ->
-            classTimetable[day]?[time]?.any { session ->
-                session.type == 'Lab' && LABROOMS.contains(session.room)
-            }
-        }
-    }
-
-    private boolean isTutorialRoomOccupiedByOtherClass(String day, String time, Map newLecture) {
-        return session.timetable.any { className, classTimetable ->
-            classTimetable[day]?[time]?.any { session ->
-                session.type == 'Tutorial' && TUTORIALROOMS.contains(session.room)
-            }
-        }
-    }
-
-    private boolean isTeacherOrRoomOccupied(List slotSessions, Map newLecture) {
-        return slotSessions.any { session ->
-            session.teacher == newLecture.teacher || 
-            (session.room == newLecture.room) ||
-            // For labs/tutorials, check if room type is already in use
-            (isRoomTypeConflict(session, newLecture))
-        }
-    }
-
-    private boolean isRoomTypeConflict(Map session, Map newLecture) {
-        // If either session is a lab or tutorial, check for room type conflicts
-        if (session.type in ['Lab', 'Tutorial'] || newLecture.type in ['Lab', 'Tutorial']) {
-            def currentRoom = session.room
-            def newRoom = newLecture.room
-            
-            // Check if rooms are of the same type (lab or tutorial)
-            boolean isCurrentLabRoom = LABROOMS.contains(currentRoom)
-            boolean isNewLabRoom = LABROOMS.contains(newRoom)
-            boolean isCurrentTutorialRoom = TUTORIALROOMS.contains(currentRoom)
-            boolean isNewTutorialRoom = TUTORIALROOMS.contains(newRoom)
-            
-            return (isCurrentLabRoom && isNewLabRoom) || 
-                (isCurrentTutorialRoom && isNewTutorialRoom)
-        }
-        return false
-    }
-
-    private boolean isTeacherAvailable(String selectedClass, String day, String time, String teacher) {
-        return !session.timetable.any { classGroup, classTimetable ->
-            classTimetable[day]?[time]?.any { session ->
-                session.teacher == teacher
-            }
-        }
-    }
-
-    private boolean canAddBatchToSlot(List slotSessions, Map newLecture) {
-        // Check if this batch already exists in the slot for any subject
-        if (slotSessions.any { it.batch == newLecture.batch }) {
-            return false
-        }
-        
-        // Check if there's space for another session (max 3 batches per slot)
-        if (slotSessions.size() >= 3) {
-            return false
-        }
-        
-        // Check if there's already a lecture in this slot
-        if (slotSessions.any { it.type == "Lecture" }) {
-            return false
-        }
-        
-        return true
-    }
-
-    private Map findAvailableSlot(Map timetable, Map card, String selectedClass) {
-        def availableSlots = []
-        WEEK_DAYS.each { day ->
-            TIME_SLOTS.each { time ->
-                if (canAddLectureToSlot(timetable, day, time, card) && 
-                    isTeacherAvailable(selectedClass, day, time, card.teacher)) {
-                    def currentSlotSize = timetable[day][time].size()
-                    if (card.type != "Lecture" && currentSlotSize < 3) {
-                        // Prioritize slots that already have sessions (but less than 3)
-                        availableSlots.add(0, [day: day, time: time])
-                    } else {
-                        availableSlots << [day: day, time: time]
-                    }
-                }
-            }
-        }
+        // Return the first available slot instead of a random one
         return availableSlots ? availableSlots[0] : null
     }
 
-    private String assignRoom(String selectedClass, String day, String time, String type, Map lectureDetails) {
-        log.info("assignRoom called with: selectedClass=${selectedClass}, day=${day}, time=${time}, type=${type}, lectureDetails=${lectureDetails}")
-
-        if (lectureDetails == null) {
-            log.warn("lectureDetails is null, defaulting to automatic room allocation")
-            return assignAutomaticRoom(type, day, time)
-        }
-
-        if (lectureDetails.roomAllocation == 'manual' && lectureDetails.manualRoom) {
-            return lectureDetails.manualRoom
-        }
-
-        return assignAutomaticRoom(type, day, time)
-    }
-
-    private String assignAutomaticRoom(String type, String day, String time) {
-        def occupiedRooms = getAllOccupiedRooms(day, time)
-        def occupiedLabRooms = getOccupiedLabRooms(day, time)
-        def occupiedTutorialRooms = getOccupiedTutorialRooms(day, time)
-
-        switch (type) {
-            case "Lecture":
-                def availableRooms = CLASSROOMS - occupiedRooms
-                return availableRooms ? availableRooms[new Random().nextInt(availableRooms.size())] : "TBD"
-            
-            case "Lab":
-                // For labs, ensure we don't assign same lab room to different batches
-                def availableLabRooms = LABROOMS - occupiedLabRooms
-                return availableLabRooms ? availableLabRooms[new Random().nextInt(availableLabRooms.size())] : "TBD"
-            
-            case "Tutorial":
-                // For tutorials, ensure we don't assign same tutorial room to different batches
-                def availableTutorialRooms = TUTORIALROOMS - occupiedTutorialRooms
-                return availableTutorialRooms ? availableTutorialRooms[new Random().nextInt(availableTutorialRooms.size())] : "TBD"
-            
-            default:
-                return "TBD"
-        }
-    }
-
-    private List<String> getAllOccupiedRooms(String day, String time) {
-        session.timetable.values().collect { classTimetable ->
-            classTimetable[day]?[time]?.collect { it.room }
-        }.flatten().findAll()
-    }
-
-    private List<String> getOccupiedLabRooms(String day, String time) {
-        session.timetable.values().collect { classTimetable ->
-            classTimetable[day]?[time]?.findAll { it.type == 'Lab' }?.collect { it.room }
-        }.flatten().findAll()
-    }
-
-    private List<String> getOccupiedTutorialRooms(String day, String time) {
-        session.timetable.values().collect { classTimetable ->
-            classTimetable[day]?[time]?.findAll { it.type == 'Tutorial' }?.collect { it.room }
-        }.flatten().findAll()
-    }
-
-    private Map filterSubjectDetailsByClass(String classGroup) {
-        return (session.subjectDetails ?: [:]).findAll { key, value -> value.class == classGroup } ?: [:]
-    }
-
-    private Map filterTimetableByClass(String classGroup) {
-        session.timetable?[classGroup] ?: [:]
-    }
-
-    def downloadTemplate() {
-        XSSFWorkbook workbook = new XSSFWorkbook()
-        XSSFSheet sheet = workbook.createSheet("Subject Mapping")
-
-        // Create header row
-        XSSFRow headerRow = sheet.createRow(0)
-        headerRow.createCell(0).setCellValue("Subject")
-        headerRow.createCell(1).setCellValue("Type")
-        headerRow.createCell(2).setCellValue("Class")
-        headerRow.createCell(3).setCellValue("Batch")
-        headerRow.createCell(4).setCellValue("Teacher")
-        headerRow.createCell(5).setCellValue("Room")
-        headerRow.createCell(6).setCellValue("Lectures Per Week")
-
-        // Create dropdowns
-        XSSFDataValidationHelper dvHelper = new XSSFDataValidationHelper(sheet)
-
-        // Subject dropdown
-        addDropdownValidation(sheet, dvHelper, 0, SUBJECTS)
-
-        // Type dropdown
-        addDropdownValidation(sheet, dvHelper, 1, ["Lecture", "Lab", "Tutorial"])
-
-        // Class dropdown
-        addDropdownValidation(sheet, dvHelper, 2, CLASSES)
-
-        // Batch dropdown (only for Lab/Tutorial)
-        addDropdownValidation(sheet, dvHelper, 3, ["", "1", "2", "3"])
-
-        // Teacher dropdown
-        addDropdownValidation(sheet, dvHelper, 4, TEACHERS)
-
-        // Room Allocation dropdown
-        List<String> allRooms = [""] + CLASSROOMS + LABROOMS + TUTORIALROOMS
-        addDropdownValidation(sheet, dvHelper, 5, allRooms)
-        
-        // Set response headers
-        response.setContentType("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
-        response.setHeader("Content-Disposition", "attachment; filename=subject_mapping_template.xlsx")
-
-        // Write to output stream
-        workbook.write(response.outputStream)
-        response.outputStream.flush()
-        response.outputStream.close()
-        workbook.close()
-    }
-
-    private void addDropdownValidation(XSSFSheet sheet, XSSFDataValidationHelper dvHelper, int columnIndex, List<String> items) {
-        CellRangeAddressList addressList = new CellRangeAddressList(1, 1000, columnIndex, columnIndex)
-        
-        if (items.join(",").length() <= 255) {
-            // If the list is short enough, use the standard method
-            XSSFDataValidationConstraint dvConstraint = (XSSFDataValidationConstraint) dvHelper.createExplicitListConstraint(items as String[])
-            XSSFDataValidation validation = (XSSFDataValidation) dvHelper.createValidation(dvConstraint, addressList)
-            sheet.addValidationData(validation)
-        } else {
-            // If the list is too long, create a named range and refer to it
-            String rangeName = "ValidList_$columnIndex"
-            XSSFName namedRange = sheet.getWorkbook().createName()
-            namedRange.setNameName(rangeName)
-            
-            // Create a new sheet for the list
-            XSSFSheet listSheet = sheet.getWorkbook().createSheet("_" + rangeName)
-            for (int i = 0; i < items.size(); i++) {
-                listSheet.createRow(i).createCell(0).setCellValue(items[i])
-            }
-            
-            // Set the reference to the list
-            String reference = "'" + listSheet.getSheetName() + "'!\$A\$1:\$A\$" + items.size()
-            namedRange.setRefersToFormula(reference)
-            
-            // Create the validation constraint
-            XSSFDataValidationConstraint dvConstraint = (XSSFDataValidationConstraint) dvHelper.createFormulaListConstraint(rangeName)
-            XSSFDataValidation validation = (XSSFDataValidation) dvHelper.createValidation(dvConstraint, addressList)
-            sheet.addValidationData(validation)
-        }
-    }
-
-    def uploadSubjectMapping() {
-        def file = request.getFile('excelFile')
-        if (file.empty) {
-            flash.message = "Please select a file"
-            redirect(action: "index")
-            return
-        }
-
-        try {
-            XSSFWorkbook workbook = new XSSFWorkbook(file.inputStream)
-            XSSFSheet sheet = workbook.getSheetAt(0)
-
-            // Initialize session.subjectDetails if it's null
-            if (session.subjectDetails == null) {
-                session.subjectDetails = [:]
-            }
-
-            // Skip header row
-            for (int i = 1; i <= sheet.lastRowNum; i++) {
-                XSSFRow row = sheet.getRow(i)
-                if (row == null) continue
-
-                def subject = getCellValueAsString(row.getCell(0))
-                def type = getCellValueAsString(row.getCell(1))
-                def classGroup = getCellValueAsString(row.getCell(2))
-                def batch = getCellValueAsString(row.getCell(3))
-                def teacher = getCellValueAsString(row.getCell(4))
-                def room = getCellValueAsString(row.getCell(5))
-                def lecturesPerWeek = row.getCell(6)?.numericCellValue?.intValue()
-
-                if (subject && type && classGroup && teacher && lecturesPerWeek != null) {
-                    // Ignore batch for Lecture type
-                    if (type == 'Lecture') {
-                        batch = null
-                    }
-
-                    def key = "${subject}_${classGroup}_${type}_${batch ?: 'NoBatch'}"
-                    
-                    def entry = [
-                        subject: subject,
-                        teacher: teacher,
-                        class: classGroup,
-                        lecturesPerWeek: lecturesPerWeek,
-                        type: type,
-                        batch: batch,
-                        roomAllocation: room ? 'manual' : 'automatic',
-                        manualRoom: room
-                    ]
-
-                    session.subjectDetails[key] = entry
-                }
-            }
-
-            workbook.close()
-            flash.message = "Subject mapping uploaded successfully"
-            
-            // Reset the timetable after uploading new subject mappings
-            resetTimetableWithoutRedirect()
-        } catch (Exception e) {
-            log.error("Error processing Excel file: ${e.message}", e)
-            flash.message = "Error processing Excel file: ${e.message}"
-        }
-
-        redirect(action: "index")
-    }
-
-    // Helper method to get cell value as string
-    private String getCellValueAsString(XSSFCell cell) {
-        if (cell == null) return null
-        switch (cell.cellType) {
-            case CellType.STRING:
-                return cell.stringCellValue
-            case CellType.NUMERIC:
-                if (DateUtil.isCellDateFormatted(cell)) {
-                    return cell.dateCellValue.format("yyyy-MM-dd")
-                }
-                // Format numeric values to remove decimal places for whole numbers
-                def value = cell.numericCellValue
-                return (value == Math.floor(value)) ? String.valueOf(value.intValue()) : String.valueOf(value)
-            case CellType.BOOLEAN:
-                return String.valueOf(cell.booleanCellValue)
-            case CellType.FORMULA:
-                return cell.cellFormula
-            default:
-                return null
-        }
-    }
-
-    private void resetTimetableWithoutRedirect() {
+    def resetTimetableWithoutRedirect() {
         session.timetable = [:]
         CLASSES.each { classGroup ->
             session.timetable[classGroup] = [:]
@@ -987,24 +578,6 @@ class TimetableController {
                 daySlots.each { time, sessions ->
                     sessions.each { session ->
                         if (session.teacher == teacher) {
-                            timetable[day] = timetable[day] ?: [:]
-                            timetable[day][time] = timetable[day][time] ?: []
-                            timetable[day][time] << session + [class: className]
-                        }
-                    }
-                }
-            }
-        }
-        return timetable
-    }
-
-    private Map fetchTimetableForLab(String lab) {
-        def timetable = [:]
-        session.timetable.each { className, classTimetable ->
-            classTimetable.each { day, daySlots ->
-                daySlots.each { time, sessions ->
-                    sessions.each { session ->
-                        if (session.room == lab) {
                             timetable[day] = timetable[day] ?: [:]
                             timetable[day][time] = timetable[day][time] ?: []
                             timetable[day][time] << session + [class: className]
@@ -1592,4 +1165,376 @@ class TimetableController {
             redirect(action: "index", params: [currentStep: 3])
         }
     }
-}    
+
+    private Map filterSubjectDetailsByClass(String classGroup) {
+        return (session.subjectDetails ?: [:]).findAll { key, value -> value.class == classGroup } ?: [:]
+    }
+
+    private Map filterTimetableByClass(String classGroup) {
+        session.timetable?[classGroup] ?: [:]
+    }
+
+    def downloadTemplate() {
+        XSSFWorkbook workbook = new XSSFWorkbook()
+        XSSFSheet sheet = workbook.createSheet("Subject Mapping")
+
+        // Create header row
+        XSSFRow headerRow = sheet.createRow(0)
+        headerRow.createCell(0).setCellValue("Subject")
+        headerRow.createCell(1).setCellValue("Type")
+        headerRow.createCell(2).setCellValue("Class")
+        headerRow.createCell(3).setCellValue("Batch")
+        headerRow.createCell(4).setCellValue("Teacher")
+        headerRow.createCell(5).setCellValue("Room")
+        headerRow.createCell(6).setCellValue("Lectures Per Week")
+
+        // Create dropdowns
+        XSSFDataValidationHelper dvHelper = new XSSFDataValidationHelper(sheet)
+
+        // Subject dropdown
+        addDropdownValidation(sheet, dvHelper, 0, SUBJECTS)
+
+        // Type dropdown
+        addDropdownValidation(sheet, dvHelper, 1, ["Lecture", "Lab", "Tutorial"])
+
+        // Class dropdown
+        addDropdownValidation(sheet, dvHelper, 2, CLASSES)
+
+        // Batch dropdown (only for Lab/Tutorial)
+        addDropdownValidation(sheet, dvHelper, 3, ["", "1", "2", "3"])
+
+        // Teacher dropdown
+        addDropdownValidation(sheet, dvHelper, 4, TEACHERS)
+
+        // Room Allocation dropdown
+        List<String> allRooms = [""] + CLASSROOMS + LABROOMS + TUTORIALROOMS
+        addDropdownValidation(sheet, dvHelper, 5, allRooms)
+        
+        // Set response headers
+        response.setContentType("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+        response.setHeader("Content-Disposition", "attachment; filename=subject_mapping_template.xlsx")
+
+        // Write to output stream
+        workbook.write(response.outputStream)
+        response.outputStream.flush()
+        response.outputStream.close()
+        workbook.close()
+    }
+
+    private void addDropdownValidation(XSSFSheet sheet, XSSFDataValidationHelper dvHelper, int columnIndex, List<String> items) {
+        CellRangeAddressList addressList = new CellRangeAddressList(1, 1000, columnIndex, columnIndex)
+        
+        if (items.join(",").length() <= 255) {
+            // If the list is short enough, use the standard method
+            XSSFDataValidationConstraint dvConstraint = (XSSFDataValidationConstraint) dvHelper.createExplicitListConstraint(items as String[])
+            XSSFDataValidation validation = (XSSFDataValidation) dvHelper.createValidation(dvConstraint, addressList)
+            sheet.addValidationData(validation)
+        } else {
+            // If the list is too long, create a named range and refer to it
+            String rangeName = "ValidList_$columnIndex"
+            XSSFName namedRange = sheet.getWorkbook().createName()
+            namedRange.setNameName(rangeName)
+            
+            // Create a new sheet for the list
+            XSSFSheet listSheet = sheet.getWorkbook().createSheet("_" + rangeName)
+            for (int i = 0; i < items.size(); i++) {
+                listSheet.createRow(i).createCell(0).setCellValue(items[i])
+            }
+            
+            // Set the reference to the list
+            String reference = "'" + listSheet.getSheetName() + "'!\$A\$1:\$A\$" + items.size()
+            namedRange.setRefersToFormula(reference)
+            
+            // Create the validation constraint
+            XSSFDataValidationConstraint dvConstraint = (XSSFDataValidationConstraint) dvHelper.createFormulaListConstraint(rangeName)
+            XSSFDataValidation validation = (XSSFDataValidation) dvHelper.createValidation(dvConstraint, addressList)
+            sheet.addValidationData(validation)
+        }
+    }
+
+    def uploadSubjectMapping() {
+        def file = request.getFile('excelFile')
+        if (file.empty) {
+            flash.message = "Please select a file"
+            redirect(action: "index")
+            return
+        }
+
+        try {
+            XSSFWorkbook workbook = new XSSFWorkbook(file.inputStream)
+            XSSFSheet sheet = workbook.getSheetAt(0)
+
+            // Initialize session.subjectDetails if it's null
+            if (session.subjectDetails == null) {
+                session.subjectDetails = [:]
+            }
+
+            // Skip header row
+            for (int i = 1; i <= sheet.lastRowNum; i++) {
+                XSSFRow row = sheet.getRow(i)
+                if (row == null) continue
+
+                def subject = getCellValueAsString(row.getCell(0))
+                def type = getCellValueAsString(row.getCell(1))
+                def classGroup = getCellValueAsString(row.getCell(2))
+                def batch = getCellValueAsString(row.getCell(3))
+                def teacher = getCellValueAsString(row.getCell(4))
+                def room = getCellValueAsString(row.getCell(5))
+                def lecturesPerWeek = row.getCell(6)?.numericCellValue?.intValue()
+
+                if (subject && type && classGroup && teacher && lecturesPerWeek != null) {
+                    // Ignore batch for Lecture type
+                    if (type == 'Lecture') {
+                        batch = null
+                    }
+
+                    def key = "${subject}_${classGroup}_${type}_${batch ?: 'NoBatch'}"
+                    
+                    def entry = [
+                        subject: subject,
+                        teacher: teacher,
+                        class: classGroup,
+                        lecturesPerWeek: lecturesPerWeek,
+                        type: type,
+                        batch: batch,
+                        roomAllocation: room ? 'manual' : 'automatic',
+                        manualRoom: room
+                    ]
+
+                    session.subjectDetails[key] = entry
+                }
+            }
+
+            workbook.close()
+            flash.message = "Subject mapping uploaded successfully"
+            
+            // Reset the timetable after uploading new subject mappings
+            resetTimetableWithoutRedirect()
+        } catch (Exception e) {
+            log.error("Error processing Excel file: ${e.message}", e)
+            flash.message = "Error processing Excel file: ${e.message}"
+        }
+
+        redirect(action: "index")
+    }
+
+    // Helper method to get cell value as string
+    private String getCellValueAsString(XSSFCell cell) {
+        if (cell == null) return null
+        switch (cell.cellType) {
+            case CellType.STRING:
+                return cell.stringCellValue
+            case CellType.NUMERIC:
+                if (DateUtil.isCellDateFormatted(cell)) {
+                    return cell.dateCellValue.format("yyyy-MM-dd")
+                }
+                // Format numeric values to remove decimal places for whole numbers
+                def value = cell.numericCellValue
+                return (value == Math.floor(value)) ? String.valueOf(value.intValue()) : String.valueOf(value)
+            case CellType.BOOLEAN:
+                return String.valueOf(cell.booleanCellValue)
+            case CellType.FORMULA:
+                return cell.cellFormula
+            default:
+                return null
+        }
+    }
+
+    private boolean checkConsecutiveLimit(String classGroup, String day, String time, String teacher) {
+        def allTimetables = session.timetable
+
+        int teacherConsecutive = 0
+        int classConsecutive = 0
+        int currentIndex = TIME_SLOTS.indexOf(time) - 1
+
+        while (currentIndex >= 0) {
+            def prevTime = TIME_SLOTS[currentIndex]
+
+            // Check teacher continuity across all classes
+            boolean teacherSessionPresent = false
+            allTimetables.each { grp, grpTimetable ->
+                def prevSlotSessions = grpTimetable[day]?[prevTime] ?: []
+                if (prevSlotSessions.any { it.teacher == teacher }) {
+                    teacherSessionPresent = true
+                }
+            }
+
+            // Check class continuity for this specific class
+            def classSlotSessions = allTimetables[classGroup][day][prevTime] ?: []
+            boolean classSessionPresent = !classSlotSessions.isEmpty()
+
+            if (teacherSessionPresent) {
+                teacherConsecutive++
+            } else {
+                teacherConsecutive = 0
+            }
+
+            if (classSessionPresent) {
+                classConsecutive++
+            } else {
+                classConsecutive = 0
+            }
+
+            // If teacher or class hit 4 consecutive sessions, must have a break
+            if (teacherConsecutive == 4 || classConsecutive == 4) {
+                return false
+            }
+
+            // If no continuity for both teacher and class, break out of the loop
+            if (!teacherSessionPresent && !classSessionPresent) {
+                break
+            }
+
+            currentIndex--
+        }
+
+        return true
+    }
+
+    private boolean isTeacherAvailable(String selectedClass, String day, String time, String teacher) {
+        return !session.timetable.any { classGroup, classTimetable ->
+            classTimetable[day]?[time]?.any { s -> s.teacher == teacher }
+        }
+    }
+
+    private boolean canAddLectureToSlot(Map timetable, String day, String time, Map newLecture, String classGroup) {
+        if (!isClassAvailablePerConstraints(classGroup, day, time)) return false
+        if (!isTeacherAvailablePerConstraints(newLecture.teacher, day, time)) return false
+
+        def currentSlot = timetable[day]?[time] ?: []
+
+        // Before returning true, ensure consecutive limit is not violated:
+        // Pass the classGroup and teacher to check globally for teacher and specifically for class.
+        boolean canContinue = checkConsecutiveLimit(classGroup, day, time, newLecture.teacher)
+        if (!canContinue) return false
+
+        if (newLecture.type == "Lecture") {
+            if (!currentSlot.isEmpty()) return false
+            return true
+        } else if (newLecture.type == "Lab") {
+            def nextTimeIndex = TIME_SLOTS.indexOf(time) + 1
+            if (nextTimeIndex >= TIME_SLOTS.size()) return false
+
+            def nextTime = TIME_SLOTS[nextTimeIndex]
+            def nextSlot = timetable[day]?[nextTime] ?: []
+
+            if (!isClassAvailablePerConstraints(classGroup, day, nextTime)) return false
+            if (!isTeacherAvailablePerConstraints(newLecture.teacher, day, nextTime)) return false
+            if (!canAddBatchToSlot(currentSlot, newLecture)) return false
+            if (!canAddBatchToSlot(nextSlot, newLecture)) return false
+            if (isTeacherOrRoomOccupied(currentSlot, newLecture)) return false
+            if (isTeacherOrRoomOccupied(nextSlot, newLecture)) return false
+
+            // Re-check consecutive limit again might not be necessary here, since we only move forward if the first slot passed.
+            return true
+        } else if (newLecture.type == "Tutorial") {
+            if (!canAddBatchToSlot(currentSlot, newLecture)) return false
+            if (isTeacherOrRoomOccupied(currentSlot, newLecture)) return false
+            return true
+        }
+
+        return false
+    }
+
+    private boolean canAddBatchToSlot(List slotSessions, Map newLecture) {
+        // Check if this batch already exists in the slot for any subject
+        if (slotSessions.any { it.batch == newLecture.batch }) {
+            return false
+        }
+        
+        // Check if there's space (max 3 batches)
+        if (slotSessions.size() >= 3) {
+            return false
+        }
+        
+        // Check if there's already a lecture (no mixing with batches)
+        if (slotSessions.any { it.type == "Lecture" }) {
+            return false
+        }
+        
+        return true
+    }
+
+    private boolean isTeacherOrRoomOccupied(List slotSessions, Map newLecture) {
+        return slotSessions.any { session ->
+            session.teacher == newLecture.teacher || 
+            (session.room == newLecture.room) ||
+            (isRoomTypeConflict(session, newLecture))
+        }
+    }
+
+    private boolean isRoomTypeConflict(Map session, Map newLecture) {
+        // If either session is a lab or tutorial, check for room type conflicts
+        if (session.type in ['Lab', 'Tutorial'] || newLecture.type in ['Lab', 'Tutorial']) {
+            def currentRoom = session.room
+            def newRoom = newLecture.room
+            
+            boolean isCurrentLabRoom = LABROOMS.contains(currentRoom)
+            boolean isNewLabRoom = LABROOMS.contains(newRoom)
+            boolean isCurrentTutorialRoom = TUTORIALROOMS.contains(currentRoom)
+            boolean isNewTutorialRoom = TUTORIALROOMS.contains(newRoom)
+            
+            return (isCurrentLabRoom && isNewLabRoom) || 
+                (isCurrentTutorialRoom && isNewTutorialRoom)
+        }
+        return false
+    }
+
+    private String assignRoom(String selectedClass, String day, String time, String type, Map lectureDetails) {
+        log.info("assignRoom called with: selectedClass=${selectedClass}, day=${day}, time=${time}, type=${type}, lectureDetails=${lectureDetails}")
+
+        if (lectureDetails == null) {
+            log.warn("lectureDetails is null, defaulting to automatic room allocation")
+            return assignAutomaticRoom(type, day, time)
+        }
+
+        if (lectureDetails.roomAllocation == 'manual' && lectureDetails.manualRoom) {
+            return lectureDetails.manualRoom
+        }
+
+        return assignAutomaticRoom(type, day, time)
+    }
+
+    private String assignAutomaticRoom(String type, String day, String time) {
+        def occupiedRooms = getAllOccupiedRooms(day, time)
+        def occupiedLabRooms = getOccupiedLabRooms(day, time)
+        def occupiedTutorialRooms = getOccupiedTutorialRooms(day, time)
+
+        switch (type) {
+            case "Lecture":
+                def availableRooms = CLASSROOMS - occupiedRooms
+                return availableRooms ? availableRooms[0] : "TBD"
+            
+            case "Lab":
+                // For labs, ensure we don't assign same lab room to different batches
+                def availableLabRooms = LABROOMS - occupiedLabRooms
+                return availableLabRooms ? availableLabRooms[0] : "TBD"
+            
+            case "Tutorial":
+                // For tutorials, ensure we don't assign same tutorial room to different batches
+                def availableTutorialRooms = TUTORIALROOMS - occupiedTutorialRooms
+                return availableTutorialRooms ? availableTutorialRooms[0] : "TBD"
+            
+            default:
+                return "TBD"
+        }
+    }
+
+    private List<String> getAllOccupiedRooms(String day, String time) {
+        session.timetable.values().collect { classTimetable ->
+            classTimetable[day]?[time]?.collect { it.room }
+        }.flatten().findAll()
+    }
+
+    private List<String> getOccupiedLabRooms(String day, String time) {
+        session.timetable.values().collect { classTimetable ->
+            classTimetable[day]?[time]?.findAll { it.type == 'Lab' }?.collect { it.room }
+        }.flatten().findAll()
+    }
+
+    private List<String> getOccupiedTutorialRooms(String day, String time) {
+        session.timetable.values().collect { classTimetable ->
+            classTimetable[day]?[time]?.findAll { it.type == 'Tutorial' }?.collect { it.room }
+        }.flatten().findAll()
+    }
+}
